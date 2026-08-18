@@ -1,0 +1,734 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       String   @id @default(cuid())
+  email    String   @unique
+  password String
+  name     String
+  phone    String?
+  address  String?
+  role     UserRole @default(CUSTOMER)
+
+  // Driver-specific fields (only for DRIVER role)
+  licenseNumber String?      @unique
+  vehicleNumber String?
+  vehicleType   VehicleType?
+  currentLat    Float?
+  currentLng    Float?
+  isAvailable   Boolean      @default(true)
+
+  // Driver application fields
+  driverApplicationStatus DriverApplicationStatus? @default(NOT_APPLIED)
+  driverApplicationDate   DateTime?
+  driverApplicationReason String?
+  driverApprovalDate      DateTime?
+  driverApprovedBy        String?
+  driverRejectionReason   String?
+
+  // Driver performance metrics
+  averageRating       Float?    @default(0)
+  totalRatings        Int       @default(0)
+  totalDeliveries     Int       @default(0)
+  completedDeliveries Int       @default(0)
+  cancelledDeliveries Int       @default(0)
+  averageDeliveryTime Int? // in minutes
+  onTimeDeliveryRate  Float?    @default(0) // percentage
+  lastActiveAt        DateTime?
+  totalEarnings       Float?    @default(0)
+
+  // Customer metrics  
+  totalParcelsEverSent   Int     @default(0)
+  totalParcelsReceived   Int     @default(0)
+  preferredPaymentMethod String?
+
+  // Common fields
+  profilePicture String? // URL to profile picture
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime? // soft delete
+
+  // Relations
+  sentParcels     Parcel[] @relation("SenderParcels")
+  receivedParcels Parcel[] @relation("RecipientParcels")
+  assignedParcels Parcel[] @relation("DriverParcels")
+
+  // New relations
+  reviewsGiven        Review[]              @relation("ReviewsGiven")
+  reviewsReceived     Review[]              @relation("ReviewsReceived")
+  notifications       Notification[]
+  statusUpdates       ParcelStatusHistory[] @relation("StatusUpdates")
+  deliveryProofs      DeliveryProof[]       @relation("DeliveryProofs")
+  confirmedDeliveries DeliveryProof[]       @relation("DeliveryConfirmations")
+  driverProfile       DriverProfile?
+
+  @@index([name])
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Parcel {
+  id               String  @id @default(cuid())
+  trackingNumber   String  @unique
+  parcelNumber     String? @unique
+  qrSealIdentifier String? @unique
+
+  // Sender info (can be registered or non-registered)
+  senderId    String? // Optional: if sender is registered user
+  senderName  String // Always stored
+  senderEmail String // Always stored
+  senderPhone String // Always stored
+
+  // Recipient info (can be registered or non-registered)
+  recipientId    String? // Optional: if recipient is registered user
+  recipientName  String // Always stored
+  recipientEmail String // Always stored
+  recipientPhone String // Always stored
+
+  // Driver assignment
+  driverId   String? // Optional: assigned driver
+  assignedAt DateTime? // When parcel was assigned to driver
+  routeId    String? // Confirmed movement route
+  currentTransitPointId String?
+
+  pickupAddress        String
+  deliveryAddress      String
+  preferredPickupAt    DateTime?
+  deliveryMethod       String?
+  currentLocation      String?
+  status               ParcelStatus @default(pending)
+  weight               Float
+  quantity             Int          @default(1)
+  category             String?
+  dimensions           String?
+  isFragile            Boolean      @default(false)
+  description          String?
+  value                Float?
+  deliveryInstructions String?
+  notes                String?
+  latitude             Float?
+  longitude            Float?
+
+  // Delivery time tracking
+  estimatedPickupTime   DateTime?
+  actualPickupTime      DateTime?
+  estimatedDeliveryTime DateTime?
+  actualDeliveryTime    DateTime?
+  totalDeliveryTime     Int? // minutes from pickup to delivery
+  deliveryAttempts      Int           @default(0)
+  deliveryFee           Float?
+  paymentStatus         PaymentStatus @default(PENDING)
+
+  // Delivery confirmation
+  deliveredToRecipient Boolean   @default(false)
+  deliveryConfirmedAt  DateTime?
+  deliveryConfirmedBy  String?
+  customerSignature    String?
+  customerNotes        String?
+
+  // Completion tracking
+  completedAt DateTime?
+  completedBy String?
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete
+
+  // Relations
+  sender        User?                 @relation("SenderParcels", fields: [senderId], references: [id])
+  recipient     User?                 @relation("RecipientParcels", fields: [recipientId], references: [id])
+  driver        User?                 @relation("DriverParcels", fields: [driverId], references: [id])
+  statusHistory ParcelStatusHistory[]
+  reviews       Review[]
+  deliveryProof DeliveryProof?
+  notifications Notification[]
+
+  @@index([senderName])
+  @@index([senderEmail])
+  @@index([recipientName])
+  @@index([recipientEmail])
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([driverId])
+  @@index([routeId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("parcels")
+}
+
+model Review {
+  id         String     @id @default(cuid())
+  parcelId   String
+  reviewerId String // Customer who left the review
+  revieweeId String? // Driver being reviewed (optional)
+  rating     Int // 1-5 stars
+  comment    String?
+  reviewType ReviewType // SERVICE, DRIVER, DELIVERY_SPEED, etc.
+  isPublic   Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  parcel   Parcel @relation(fields: [parcelId], references: [id])
+  reviewer User   @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  reviewee User?  @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+
+  @@unique([parcelId, reviewerId, reviewType])
+  @@index([revieweeId])
+  @@map("reviews")
+}
+
+model ParcelStatusHistory {
+  id        String       @id @default(cuid())
+  parcelId  String
+  status    ParcelStatus
+  location  String?
+  latitude  Float?
+  longitude Float?
+  updatedBy String? // User who updated (driver/admin)
+  timestamp DateTime     @default(now())
+  notes     String?
+  imageUrl  String? // Proof photos
+
+  parcel        Parcel @relation(fields: [parcelId], references: [id])
+  updatedByUser User?  @relation("StatusUpdates", fields: [updatedBy], references: [id])
+
+  @@map("parcel_status_history")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType
+  isRead    Boolean          @default(false)
+  actionUrl String?
+  parcelId  String?
+  createdAt DateTime         @default(now())
+  readAt    DateTime?
+
+  user   User    @relation(fields: [userId], references: [id])
+  parcel Parcel? @relation(fields: [parcelId], references: [id])
+
+  @@map("notifications")
+}
+
+model DeliveryProof {
+  id                String   @id @default(cuid())
+  parcelId          String   @unique
+  customerSignature String? // Customer signature URL
+  recipientName     String
+  deliveredAt       DateTime // When driver delivered (driver timestamp)
+  confirmedAt       DateTime // When customer confirmed delivery
+  deliveredBy       String // Driver ID
+  confirmedBy       String // Recipient ID who confirmed
+  customerNotes     String? // Any notes from customer
+  driverNotes       String? // Any notes from driver
+
+  parcel    Parcel @relation(fields: [parcelId], references: [id])
+  driver    User   @relation("DeliveryProofs", fields: [deliveredBy], references: [id])
+  recipient User   @relation("DeliveryConfirmations", fields: [confirmedBy], references: [id])
+
+  @@map("delivery_proofs")
+}
+
+enum UserRole {
+  CUSTOMER
+  DRIVER
+  ADMIN
+  TRANSIT_OFFICER
+}
+
+enum DriverApplicationStatus {
+  NOT_APPLIED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VehicleType {
+  MOTORCYCLE
+  CAR
+  VAN
+  TRUCK
+}
+
+enum ParcelStatus {
+  created
+  awaiting_confirmation
+  awaiting_driver_assignment
+  pending
+  assigned
+  awaiting_pickup
+  picked_up
+  collected
+  at_origin_transit_point
+  in_transit
+  arrived_at_transit_point
+  at_transit_point
+  at_destination
+  batch_transferred
+  out_for_delivery
+  locker_assigned
+  ready_for_locker_collection
+  in_locker
+  collected_from_locker
+  delivered_to_recipient // Driver delivered, waiting for customer confirmation
+  delivered // Customer confirmed delivery
+  completed // Customer marked as complete, can leave review
+  delivery_unsuccessful
+  returned
+  tampering_alert
+  cancelled
+}
+
+enum ReviewType {
+  SERVICE
+  DRIVER
+  DELIVERY_SPEED
+  COMMUNICATION
+  OVERALL
+}
+
+enum NotificationType {
+  PARCEL_CREATED
+  PARCEL_ASSIGNED
+  PARCEL_PICKED_UP
+  PARCEL_IN_TRANSIT
+  PARCEL_DELIVERED_TO_RECIPIENT // Driver delivered, waiting for customer confirmation
+  PARCEL_DELIVERED // Customer confirmed delivery
+  PARCEL_COMPLETED // Customer marked as complete
+  DRIVER_ASSIGNED
+  PAYMENT_RECEIVED
+  REVIEW_RECEIVED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String // 6-digit token
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("password_reset_tokens")
+}
+
+model CustomerProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("customer_profiles")
+}
+
+model DriverProfile {
+  id              String       @id @default(cuid())
+  userId          String       @unique
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nationalId      String?
+  routesServed    String[]
+  currentRouteId  String?
+  approvalStatus  DriverStatus @default(PENDING_APPROVAL)
+  activationNotes String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([currentRouteId])
+  @@map("driver_profiles")
+}
+
+model DriverDocument {
+  id        String   @id @default(cuid())
+  driverId  String
+  type      String
+  url       String
+  publicId  String?
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([driverId])
+  @@map("driver_documents")
+}
+
+model ParcelAssignment {
+  id             String           @id @default(cuid())
+  parcelId       String
+  driverId       String
+  assignedBy     String
+  status         AssignmentStatus @default(ASSIGNED)
+  assignedAt     DateTime         @default(now())
+  acknowledgedAt DateTime?
+  completedAt    DateTime?
+  rejectedAt     DateTime?
+  rejectionReason String?
+
+  @@index([parcelId])
+  @@index([driverId, status])
+  @@map("parcel_assignments")
+}
+
+model Route {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  origin      String
+  destination String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("routes")
+}
+
+model TransitPoint {
+  id        String   @id @default(cuid())
+  name      String
+  latitude  Float
+  longitude Float
+  contact   String?
+  routeId   String?
+  officerId String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([routeId])
+  @@index([officerId])
+  @@map("transit_points")
+}
+
+model RouteTransitPoint {
+  id             String  @id @default(cuid())
+  routeId        String
+  transitPointId String
+  sequence       Int
+  instructions   String?
+
+  @@unique([routeId, transitPointId])
+  @@unique([routeId, sequence])
+  @@map("route_transit_points")
+}
+
+model Batch {
+  id            String      @id @default(cuid())
+  batchNumber   String      @unique
+  routeId       String
+  driverId      String?
+  parentBatchId String?
+  status        BatchStatus @default(CREATED)
+  createdAt     DateTime    @default(now())
+  closedAt      DateTime?
+
+  @@index([routeId])
+  @@index([parentBatchId])
+  @@map("batches")
+}
+
+model BatchParcel {
+  id        String    @id @default(cuid())
+  batchId   String
+  parcelId  String
+  addedAt   DateTime  @default(now())
+  loadedAt  DateTime?
+  loadedBy  String?
+  removedAt DateTime?
+
+  @@unique([batchId, parcelId])
+  @@index([parcelId])
+  @@map("batch_parcels")
+}
+
+model BatchEvent {
+  id             String   @id @default(cuid())
+  batchId        String
+  transitPointId String?
+  type           String
+  notes          String?
+  createdBy      String
+  createdAt      DateTime @default(now())
+
+  @@index([batchId, createdAt])
+  @@map("batch_events")
+}
+
+model TransitInspection {
+  id             String        @id @default(cuid())
+  batchId        String
+  parcelId       String
+  transitPointId String
+  officerId      String
+  condition      SealCondition
+  decision       String
+  notes          String?
+  inspectedAt    DateTime      @default(now())
+
+  @@index([batchId, inspectedAt])
+  @@index([parcelId, inspectedAt])
+  @@index([transitPointId, officerId])
+  @@map("transit_inspections")
+}
+
+model LockerStation {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  address      String
+  transitPointId String?
+  latitude     Float
+  longitude    Float
+  openingHours String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("locker_stations")
+  @@index([transitPointId])
+}
+
+model LockerCompartment {
+  id              String       @id @default(cuid())
+  stationId       String
+  compartmentNo   String
+  size            LockerSize
+  status          LockerStatus @default(AVAILABLE)
+  currentParcelId String?
+  lastMaintenance DateTime?
+
+  @@unique([stationId, compartmentNo])
+  @@index([stationId, status, size])
+  @@map("locker_compartments")
+}
+
+model LockerAssignment {
+  id            String    @id @default(cuid())
+  parcelId      String
+  compartmentId String
+  assignedBy    String
+  assignedAt    DateTime  @default(now())
+  collectedAt   DateTime?
+  cancelledAt   DateTime?
+
+  @@index([parcelId])
+  @@index([compartmentId])
+  @@map("locker_assignments")
+}
+
+model LockerRequest {
+  id          String   @id @default(cuid())
+  parcelId    String
+  requestedBy String
+  stationId   String?
+  size        LockerSize @default(MEDIUM)
+  status      String   @default("PENDING")
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime @default(now())
+  @@index([parcelId, status])
+  @@index([status, createdAt])
+  @@map("locker_requests")
+}
+
+model CollectionCode {
+  id                 String    @id @default(cuid())
+  lockerAssignmentId String
+  codeHash           String
+  expiresAt          DateTime
+  usedAt             DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([lockerAssignmentId])
+  @@map("collection_codes")
+}
+
+model ParcelSeal {
+  id         String   @id @default(cuid())
+  parcelId   String   @unique
+  identifier String   @unique
+  signedData String
+  active     Boolean  @default(true)
+  createdBy  String
+  createdAt  DateTime @default(now())
+
+  @@map("parcel_seals")
+}
+
+model SealScan {
+  id             String        @id @default(cuid())
+  sealId         String
+  parcelId       String
+  scannedBy      String
+  scannerRole    UserRole
+  transitPointId String?
+  condition      SealCondition
+  imageUrl       String?
+  comments       String?
+  previousStatus ParcelStatus?
+  currentStatus  ParcelStatus?
+  createdAt      DateTime      @default(now())
+
+  @@index([parcelId, createdAt])
+  @@index([sealId])
+  @@map("seal_scans")
+}
+
+model TamperAlert {
+  id            String          @id @default(cuid())
+  parcelId      String
+  sealScanId    String?
+  type          TamperAlertType
+  status        AlertStatus     @default(OPEN)
+  details       String
+  investigation String?
+  outcome       String?
+  resolvedBy    String?
+  createdAt     DateTime        @default(now())
+  resolvedAt    DateTime?
+
+  @@index([parcelId, status])
+  @@map("tamper_alerts")
+}
+
+model DemandForecast {
+  id                  String   @id @default(cuid())
+  routeId             String?
+  destination         String?
+  periodStart         DateTime
+  periodEnd           DateTime
+  predictedVolume     Float
+  confidence          Float?
+  recommendedCapacity Int?
+  model               String
+  createdAt           DateTime @default(now())
+
+  @@index([routeId, periodStart])
+  @@map("demand_forecasts")
+}
+
+model ForecastMetric {
+  id         String   @id @default(cuid())
+  forecastId String
+  actual     Float
+  error      Float
+  measuredAt DateTime @default(now())
+
+  @@index([forecastId])
+  @@map("forecast_metrics")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+enum DriverStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  ACKNOWLEDGED
+  COLLECTED
+  COMPLETED
+  CANCELLED
+  REJECTED
+}
+
+enum BatchStatus {
+  CREATED
+  IN_TRANSIT
+  SPLIT
+  MERGED
+  CLOSED
+}
+
+enum LockerSize {
+  SMALL
+  MEDIUM
+  LARGE
+  EXTRA_LARGE
+}
+
+enum LockerStatus {
+  AVAILABLE
+  RESERVED
+  OCCUPIED
+  OUT_OF_SERVICE
+  AWAITING_COLLECTION
+  COLLECTION_COMPLETED
+}
+
+enum SealCondition {
+  INTACT
+  DAMAGED
+  BROKEN
+  QR_MISMATCH
+}
+
+enum TamperAlertType {
+  SEAL_DAMAGED
+  SEAL_BROKEN
+  QR_MISMATCH
+  DUPLICATE_QR
+  SKIPPED_TRANSIT_POINT
+  INVALID_SEQUENCE
+  UNAUTHORISED_SCAN
+}
+
+enum AlertStatus {
+  OPEN
+  UNDER_INVESTIGATION
+  RESOLVED
+  ESCALATED
+}

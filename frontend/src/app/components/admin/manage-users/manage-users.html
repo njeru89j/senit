@@ -1,0 +1,393 @@
+<!-- Admin Container -->
+<div class="admin-container">
+  <!-- Shared Sidebar -->
+  <app-sidebar></app-sidebar>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Header -->
+    <div class="content-header">
+      <div class="header-left">
+        <h1>User Management</h1>
+        <p class="subtitle">Manage all users registered in the system</p>
+      </div>
+      <div class="header-right">
+        <!-- Header actions can be added here -->
+      </div>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div class="dashboard-content">
+            <div class="user-management-container">
+
+      <!-- Tab Navigation -->
+      <div class="tab-navigation">
+        <button class="tab-button" [class.active]="activeTab === 'users'" (click)="switchTab('users')">
+          <i class="fas fa-users"></i>
+          All Users
+          <span class="badge" *ngIf="totalUsers > 0">{{ totalUsers }}</span>
+        </button>
+        <button class="tab-button" [class.active]="activeTab === 'applications'" (click)="switchTab('applications')">
+          <i class="fas fa-truck"></i>
+          Driver Applications
+          <span class="badge" *ngIf="pendingApplicationsCount > 0">{{ pendingApplicationsCount }}</span>
+        </button>
+      </div>
+
+      <!-- Users Tab Content -->
+      <div class="tab-content" *ngIf="activeTab === 'users'">
+        <!-- Loading State -->
+        <div *ngIf="isLoadingUsers" class="loading-state">
+          <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading users...</p>
+          </div>
+        </div>
+
+        <!-- Users Content -->
+        <div *ngIf="!isLoadingUsers">
+        <div class="search-filter-row">
+            <input class="search-input" type="text" placeholder="Search users by name, email, or phone" [(ngModel)]="searchTerm" (input)="onSearchChange()" />
+            <select class="filter-select" [(ngModel)]="selectedStatus" (change)="onStatusChange()">
+            <option value="">Account Status</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Suspended">Suspended</option>
+          </select>
+            <select class="filter-select" [(ngModel)]="selectedRole" (change)="onRoleChange()">
+            <option value="">Role</option>
+              <option value="CUSTOMER">Customer</option>
+              <option value="DRIVER">Driver</option>
+              <option value="ADMIN">Admin</option>
+          </select>
+          <button class="clear-filters-btn" (click)="clearFilters()">Clear Filters</button>
+        </div>
+
+        <div class="users-grid" *ngIf="filteredUsers.length > 0">
+          <div class="user-card" *ngFor="let user of paginatedUsers" (click)="viewUserDetails(user.id)" style="cursor: pointer;" [attr.data-user-id]="user.id">
+            <!-- Top Section with Gradient Background -->
+            <div class="card-top-section">
+              <!-- Status Badge - Always Show -->
+              <div class="status-badge" [ngClass]="getStatusInfo(user).class">
+                <i class="fas" [ngClass]="getStatusInfo(user).icon"></i>
+                {{ getStatusInfo(user).text }}
+              </div>
+              
+              <!-- Profile Picture/Initials -->
+              <div class="profile-section">
+                <div class="profile-image-container">
+                  <img 
+                    *ngIf="user.profilePicture && user.profilePicture !== ''" 
+                    class="profile-image" 
+                    [src]="user.profilePicture" 
+                    [alt]="user.name"
+                    (error)="onImageError($event)"
+                  />
+                  <div 
+                    *ngIf="!user.profilePicture || user.profilePicture === ''" 
+                    class="profile-initials"
+                    [style.background-color]="getAvatarColor(user.name)"
+                  >
+                    <div class="initials-content">
+                      <i class="fas fa-user"></i>
+                      <span>{{ getUserInitials(user.name) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Bottom Section with User Info -->
+            <div class="card-bottom-section">
+              <!-- User Name with Verification -->
+              <div class="user-header">
+                <h3 class="user-name">{{ user.name }}</h3>
+                <i class="fas fa-check-circle verification-icon" *ngIf="user.isActive"></i>
+              </div>
+              
+              <!-- User Role -->
+              <div class="user-role-section">
+                <div class="role-badge" [ngClass]="'role-' + user.role.toLowerCase()">
+                  <i class="fas" [ngClass]="getRoleIcon(user.role)"></i>
+                  {{ user.role }}
+                </div>
+              </div>
+              
+              <!-- User Statistics -->
+              <div class="user-stats">
+                <div class="stat-item" *ngIf="user.phone">
+                  <i class="fas fa-phone"></i>
+                  <span>{{ user.phone }}</span>
+                </div>
+                <div class="stat-item">
+                  <i class="fas fa-calendar-alt"></i>
+                  <span>Joined {{ user.createdAt | date:'MMM yyyy' }}</span>
+                </div>
+                <div class="stat-item" *ngIf="user.totalDeliveries > 0">
+                  <i class="fas fa-truck"></i>
+                  <span>{{ user.totalDeliveries }} deliveries</span>
+                </div>
+              </div>
+              
+              <!-- Action Button -->
+              <button class="view-profile-btn" (click)="$event.stopPropagation(); viewUserDetails(user.id)">
+                <i class="fas fa-eye"></i>
+                View Profile
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="no-users-found" *ngIf="filteredUsers.length === 0">
+          <div class="no-users-icon">
+            <i class="fas fa-users"></i>
+          </div>
+          <h3>No Users Found</h3>
+          <p>No users match your current search criteria or filters.</p>
+          <button class="clear-filters-btn" (click)="clearFilters()">Clear All Filters</button>
+        </div>
+
+        <div class="pagination" *ngIf="filteredUsers.length > 0">
+          <button (click)="setPage(currentPage - 1)" [disabled]="currentPage === 1">&lt;</button>
+          <button *ngFor="let page of [].constructor(totalPages); let i = index" (click)="setPage(i + 1)" [class.active]="currentPage === i + 1">{{ i + 1 }}</button>
+          <button (click)="setPage(currentPage + 1)" [disabled]="currentPage === totalPages">&gt;</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Driver Applications Tab Content -->
+      <div class="tab-content" *ngIf="activeTab === 'applications'">
+        <!-- Loading State -->
+        <div *ngIf="isLoadingApplications" class="loading-state">
+          <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading applications...</p>
+          </div>
+        </div>
+
+        <!-- Applications Content -->
+        <div *ngIf="!isLoadingApplications">
+        <div class="applications-header">
+          <div class="applications-stats">
+            <div class="stat-card">
+              <div class="stat-number">{{ pendingApplicationsCount }}</div>
+              <div class="stat-label">Pending</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number">{{ approvedApplicationsCount }}</div>
+              <div class="stat-label">Approved</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number">{{ rejectedApplicationsCount }}</div>
+              <div class="stat-label">Rejected</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="applications-filter-row">
+            <select class="filter-select" [(ngModel)]="selectedApplicationStatus" (change)="onApplicationStatusChange()">
+            <option value="">All Applications</option>
+            <option value="PENDING">Pending</option>
+            <option value="APPROVED">Approved</option>
+            <option value="REJECTED">Rejected</option>
+          </select>
+          <button class="clear-filters-btn" (click)="clearApplicationFilters()">Clear Filters</button>
+        </div>
+
+        <div class="applications-grid" *ngIf="filteredApplications.length > 0">
+          <div class="application-card" *ngFor="let application of paginatedApplications" (click)="viewApplicationDetails(application.id)">
+            <div class="card-header">
+              <div class="view-indicator">
+                <i class="fas fa-eye"></i>
+                <span>Click to view details</span>
+              </div>
+            </div>
+            <div class="application-header">
+              <div class="applicant-info">
+                  <div class="applicant-name">{{ application.name }}</div>
+                  <div class="applicant-email">{{ application.email }}</div>
+                </div>
+                <div class="application-status" [ngClass]="getStatusClass(application.driverApplicationStatus)">
+                  {{ getStatusText(application.driverApplicationStatus) }}
+              </div>
+            </div>
+            <div class="application-details">
+                <div class="detail-row" *ngIf="application.licenseNumber">
+                <span class="detail-label">License:</span>
+                <span class="detail-value">{{ application.licenseNumber }}</span>
+              </div>
+              <div class="detail-row" *ngIf="application.vehicleNumber">
+                <span class="detail-label">Vehicle:</span>
+                <span class="detail-value">{{ application.vehicleNumber }} ({{ application.vehicleType }})</span>
+              </div>
+              <div class="detail-row" *ngIf="application.driverApplicationReason">
+                <span class="detail-label">Reason:</span>
+                <span class="detail-value reason-preview">{{ application.driverApplicationReason }}</span>
+              </div>
+                <div class="detail-row" *ngIf="application.driverApplicationDate">
+                <span class="detail-label">Applied:</span>
+                  <span class="detail-value">{{ application.driverApplicationDate | date:'medium' }}</span>
+                </div>
+              </div>
+              <div class="application-actions" *ngIf="application.driverApplicationStatus === 'PENDING'">
+              <button class="btn-approve" (click)="approveApplication(application.id, $event)" [disabled]="approvingApplicationId === application.id || rejectingApplicationId === application.id">
+                <i class="fas" [ngClass]="approvingApplicationId === application.id ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+                {{ approvingApplicationId === application.id ? 'Approving...' : 'Approve' }}
+              </button>
+              <button class="btn-reject" (click)="rejectApplication(application.id, $event)" [disabled]="approvingApplicationId === application.id || rejectingApplicationId === application.id">
+                <i class="fas" [ngClass]="rejectingApplicationId === application.id ? 'fa-spinner fa-spin' : 'fa-times'"></i>
+                {{ rejectingApplicationId === application.id ? 'Rejecting...' : 'Reject' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="no-applications-found" *ngIf="filteredApplications.length === 0">
+          <div class="no-applications-icon">
+            <i class="fas fa-truck"></i>
+          </div>
+          <h3>No Applications Found</h3>
+          <p>No driver applications match your current filters.</p>
+          <button class="clear-filters-btn" (click)="clearApplicationFilters()">Clear All Filters</button>
+        </div>
+
+        <div class="pagination" *ngIf="filteredApplications.length > 0">
+          <button (click)="setApplicationPage(currentApplicationPage - 1)" [disabled]="currentApplicationPage === 1">&lt;</button>
+          <button *ngFor="let page of [].constructor(totalApplicationPages); let i = index" (click)="setApplicationPage(i + 1)" [class.active]="currentApplicationPage === i + 1">{{ i + 1 }}</button>
+          <button (click)="setApplicationPage(currentApplicationPage + 1)" [disabled]="currentApplicationPage === totalApplicationPages">&gt;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+  </main>
+</div>
+
+<!-- Application Details Modal -->
+<div class="modal-overlay" *ngIf="showApplicationDetailsModal">
+  <div class="modal application-details-modal">
+    <div class="modal-header">
+      <h3>Driver Application Details</h3>
+      <button class="modal-close" (click)="closeApplicationDetailsModal()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <div class="modal-body" *ngIf="selectedApplicationForReview">
+      <div class="applicant-header">
+        <div class="applicant-avatar">
+          <i class="fas fa-user"></i>
+        </div>
+        <div class="applicant-info">
+          <h4>{{ selectedApplicationForReview.name }}</h4>
+          <p>{{ selectedApplicationForReview.email }}</p>
+          <div class="application-status-badge" [ngClass]="getStatusClass(selectedApplicationForReview.driverApplicationStatus)">
+            {{ getStatusText(selectedApplicationForReview.driverApplicationStatus) }}
+          </div>
+        </div>
+      </div>
+
+      <div class="application-sections">
+        <div class="section" *ngIf="selectedApplicationForReview.licenseNumber">
+          <h5><i class="fas fa-id-card"></i> License Information</h5>
+          <div class="detail-item">
+            <span class="label">License Number:</span>
+            <span class="value">{{ selectedApplicationForReview.licenseNumber }}</span>
+          </div>
+        </div>
+
+        <div class="section" *ngIf="selectedApplicationForReview.vehicleNumber">
+          <h5><i class="fas fa-car"></i> Vehicle Information</h5>
+          <div class="detail-item">
+            <span class="label">Vehicle Number:</span>
+            <span class="value">{{ selectedApplicationForReview.vehicleNumber }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="label">Vehicle Type:</span>
+            <span class="value">{{ selectedApplicationForReview.vehicleType }}</span>
+          </div>
+        </div>
+
+        <div class="section" *ngIf="selectedApplicationForReview.driverApplicationReason">
+          <h5><i class="fas fa-comment"></i> Application Reason</h5>
+          <div class="reason-text">
+            {{ selectedApplicationForReview.driverApplicationReason }}
+          </div>
+        </div>
+
+        <div class="section" *ngIf="selectedApplicationForReview.driverRejectionReason">
+          <h5><i class="fas fa-times-circle"></i> Rejection Reason</h5>
+          <div class="reason-text">
+            {{ selectedApplicationForReview.driverRejectionReason }}
+          </div>
+        </div>
+
+        <div class="section">
+          <h5><i class="fas fa-calendar"></i> Application Timeline</h5>
+          <div class="detail-item" *ngIf="selectedApplicationForReview.driverApplicationDate">
+            <span class="label">Applied on:</span>
+            <span class="value">{{ selectedApplicationForReview.driverApplicationDate | date:'medium' }}</span>
+          </div>
+          <div class="detail-item" *ngIf="selectedApplicationForReview.driverApprovalDate">
+            <span class="label">Processed on:</span>
+            <span class="value">{{ selectedApplicationForReview.driverApprovalDate | date:'medium' }}</span>
+          </div>
+          <div class="detail-item" *ngIf="selectedApplicationForReview.driverRejectionReason">
+            <span class="label">Rejection Reason:</span>
+            <span class="value rejection-reason">{{ selectedApplicationForReview.driverRejectionReason }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" *ngIf="selectedApplicationForReview?.driverApplicationStatus === 'PENDING'">
+      <button class="btn-cancel" (click)="closeApplicationDetailsModal()" [disabled]="approvingApplicationId === selectedApplicationForReview?.id || rejectingApplicationId === selectedApplicationForReview?.id">Close</button>
+      <button class="btn-approve" (click)="approveApplicationFromModal()" [disabled]="approvingApplicationId === selectedApplicationForReview?.id || rejectingApplicationId === selectedApplicationForReview?.id">
+        <i class="fas" [ngClass]="approvingApplicationId === selectedApplicationForReview?.id ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+        {{ approvingApplicationId === selectedApplicationForReview?.id ? 'Approving...' : 'Approve Application' }}
+      </button>
+      <button class="btn-reject" (click)="rejectApplicationFromModal()" [disabled]="approvingApplicationId === selectedApplicationForReview?.id || rejectingApplicationId === selectedApplicationForReview?.id">
+        <i class="fas" [ngClass]="rejectingApplicationId === selectedApplicationForReview?.id ? 'fa-spinner fa-spin' : 'fa-times'"></i>
+        {{ rejectingApplicationId === selectedApplicationForReview?.id ? 'Rejecting...' : 'Reject Application' }}
+      </button>
+    </div>
+    <div class="modal-actions" *ngIf="selectedApplicationForReview?.driverApplicationStatus !== 'PENDING'">
+      <button class="btn-cancel" (click)="closeApplicationDetailsModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Rejection Modal -->
+<div class="modal-overlay" *ngIf="showRejectionModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Reject Application</h3>
+      <button class="modal-close" (click)="closeRejectionModal()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="warning-icon">
+        <i class="fas fa-exclamation-triangle"></i>
+      </div>
+      <p>Are you sure you want to reject this application?</p>
+      <p class="warning-text">This action cannot be undone.</p>
+      
+      <div class="form-group">
+        <label for="rejectionReason">Reason for Rejection *</label>
+        <textarea 
+          id="rejectionReason" 
+          [(ngModel)]="rejectionReason"
+          placeholder="Please provide a reason for rejecting this application..."
+          rows="4"
+          class="rejection-reason-input"
+        ></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" (click)="closeRejectionModal()" [disabled]="isConfirmingRejection">Cancel</button>
+      <button class="btn-confirm-reject" (click)="confirmRejection()" [disabled]="isConfirmingRejection">
+        <i class="fas" [ngClass]="isConfirmingRejection ? 'fa-spinner fa-spin' : 'fa-times'"></i>
+        {{ isConfirmingRejection ? 'Rejecting...' : 'Reject Application' }}
+      </button>
+    </div>
+  </div>
+</div>

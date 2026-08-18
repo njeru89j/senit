@@ -1,0 +1,606 @@
+.driver-dashboard {
+  display: flex;
+  min-height: calc(100vh - 80px);
+  background-color: #f8f9fa;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin-top: 0;
+  overflow: hidden;
+}
+
+/* Animation Keyframes */
+@keyframes fadeInUp {
+  from { 
+    opacity: 0; 
+    transform: translateY(20px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+/* Shared Sidebar - Styles are now in sidebar.css */
+
+/* Main Content Styles */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 80px);
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.content-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 30px;
+  background-color: transparent;
+  border-bottom: none;
+  margin-bottom: 20px;
+}
+
+.welcome-title {
+  font-size: 32px;
+  font-weight: bold;
+  color: #2c3e50;
+  margin: 0;
+}
+
+.highlight {
+  color: #DBBB02;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.profile-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-picture {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #DBBB02;
+  transition: transform 0.3s ease;
+}
+
+.profile-picture:hover {
+  transform: scale(1.1);
+}
+
+.driver-name {
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+/* Metrics Section */
+.metrics-section {
+  padding: 0 30px 30px 30px;
+}
+
+.section-title {
+  font-size: 24px;
+  font-weight: bold;
+  color: #2c3e50;
+  margin: 0 0 20px 0;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+.metric-card {
+  background-color: white;
+  padding: 25px;
+  border-radius: 12px;
+  box-shadow: rgba(50, 50, 93, 0.25) 0px 50px 100px -20px, rgba(0, 0, 0, 0.3) 0px 30px 60px -30px;
+  border: 1px solid #e9ecef;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: fadeInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
+
+.metric-card:hover {
+  transform: translateY(-5px);
+  box-shadow: rgba(50, 50, 93, 0.35) 0px 60px 120px -20px, rgba(0, 0, 0, 0.4) 0px 40px 80px -30px;
+}
+
+.metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.metric-header h3 {
+  font-size: 14px;
+  color: #6c757d;
+  margin: 0;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.metric-icon {
+  color: #DBBB02;
+  font-size: 18px;
+  transition: transform 0.3s ease;
+}
+
+.metric-card:hover .metric-icon {
+  transform: scale(1.1);
+}
+
+.metric-value {
+  font-size: 28px;
+  font-weight: bold;
+  color: #2c3e50;
+  margin: 0 0 10px 0;
+}
+
+.metric-change {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: transform 0.3s ease;
+}
+
+.metric-change.positive {
+  color: #28a745;
+}
+
+.metric-change.negative {
+  color: #dc3545;
+}
+
+.metric-change i {
+  font-size: 12px;
+  transition: transform 0.3s ease;
+}
+
+.metric-card:hover .metric-change {
+  transform: translateX(3px);
+}
+
+.metric-card:hover .metric-change i {
+  transform: translateY(-1px);
+}
+
+/* Deliveries Section */
+.deliveries-section {
+  padding: 0 30px 30px 30px;
+  animation: fadeInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.table-container {
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: rgba(50, 50, 93, 0.25) 0px 50px 100px -20px, rgba(0, 0, 0, 0.3) 0px 30px 60px -30px;
+  border: 1px solid #e9ecef;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.table-container:hover {
+  transform: translateY(-2px);
+  box-shadow: rgba(50, 50, 93, 0.35) 0px 60px 120px -20px, rgba(0, 0, 0, 0.4) 0px 40px 80px -30px;
+}
+
+.deliveries-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.deliveries-table th {
+  background-color: #f8f9fa;
+  padding: 15px 20px;
+  text-align: left;
+  font-weight: 600;
+  color: #2c3e50;
+  border-bottom: 1px solid #e9ecef;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.deliveries-table td {
+  padding: 15px 20px;
+  border-bottom: 1px solid #e9ecef;
+  color: #2c3e50;
+  transition: all 0.3s ease;
+}
+
+.deliveries-table tr {
+  transition: all 0.3s ease;
+}
+
+.deliveries-table tr:hover {
+  background-color: #f8f9fa;
+  transform: translateX(3px);
+}
+
+.parcel-id {
+  font-weight: 600;
+  color: #DBBB02;
+  transition: color 0.3s ease;
+}
+
+.deliveries-table tr:hover .parcel-id {
+  color: #c4a602;
+}
+
+.pickup-address,
+.delivery-address {
+  max-width: 200px;
+  word-wrap: break-word;
+}
+
+.scheduled-time {
+  font-weight: 500;
+}
+
+/* Loading States */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #DBBB02;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-container p {
+  color: #666;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* No Data State */
+.no-data {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  background: #f8f9fa;
+  border-radius: 12px;
+  border: 2px dashed #dee2e6;
+}
+
+.no-data i {
+  font-size: 3rem;
+  color: #adb5bd;
+  margin-bottom: 16px;
+}
+
+.no-data h3 {
+  color: #495057;
+  margin-bottom: 8px;
+  font-size: 1.2rem;
+}
+
+.no-data p {
+  color: #6c757d;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* Action Buttons */
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  color: white;
+}
+
+.view-btn {
+  background-color: #6c757d;
+}
+
+.view-btn:hover {
+  background-color: #5a6268;
+}
+
+.start-btn {
+  background-color: #28a745;
+}
+
+.start-btn:hover {
+  background-color: #218838;
+}
+
+.complete-btn {
+  background-color: #DBBB02;
+  color: #333;
+}
+
+.complete-btn:hover {
+  background-color: #b8a102;
+}
+
+/* Customer Info */
+.customer-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.customer-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.customer-phone {
+  color: #666;
+  font-size: 0.8rem;
+}
+
+/* Tracking Number */
+.tracking-number {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: #DBBB02;
+  background-color: #fffbe6;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+/* Completed Date */
+.completed-date {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+/* Metric Subtitle */
+.metric-subtitle {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.metric-subtitle span {
+  background-color: #e9ecef;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Status Badges */
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-pending {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.status-assigned {
+  background-color: #d1ecf1;
+  color: #0c5460;
+}
+
+.status-picked-up {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.status-in-transit {
+  background-color: #cce5ff;
+  color: #004085;
+}
+
+.status-delivered {
+  background-color: #d1e7dd;
+  color: #0f5132;
+}
+
+.status-cancelled {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+/* Welcome Subtitle */
+.welcome-subtitle {
+  color: #666;
+  font-size: 1rem;
+  margin-top: 8px;
+  font-weight: 400;
+}
+
+
+
+/* Summary Section */
+.summary-section {
+  margin-bottom: 2rem;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+.summary-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.summary-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #e8f5e8, #d4edda);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.summary-icon i {
+  font-size: 1.2rem;
+  color: #28a745;
+}
+
+.summary-content h3 {
+  margin: 0 0 1rem 0;
+  color: #333;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.summary-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.summary-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.summary-stat:last-child {
+  border-bottom: none;
+}
+
+.stat-label {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.stat-value {
+  color: #333;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .driver-dashboard {
+    display: flex;
+  }
+
+  /* Sidebar responsive styles handled by shared component */
+
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .driver-dashboard {
+    display: flex;
+  }
+
+  .main-content {
+    margin-left: 0; /* Remove left margin on mobile */
+  }
+
+  /* Sidebar mobile styles handled by shared component */
+
+  .content-header {
+    flex-direction: column;
+    gap: 15px;
+    text-align: center;
+  }
+
+  .welcome-title {
+    font-size: 24px;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .deliveries-table {
+    font-size: 14px;
+  }
+
+  .deliveries-table th,
+  .deliveries-table td {
+    padding: 10px 15px;
+  }
+
+  .pickup-address,
+  .delivery-address {
+    max-width: 150px;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .summary-card {
+    padding: 1rem;
+  }
+  
+  .summary-icon {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .summary-icon i {
+    font-size: 1rem;
+  }
+}

@@ -1,0 +1,435 @@
+<div class="create-delivery">
+  <!-- Shared Sidebar -->
+  <app-sidebar></app-sidebar>
+
+
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Dashboard Content -->
+    <div class="dashboard-content">
+    <div class="content-header">
+      <h1 class="page-title">{{ userRole === 'CUSTOMER' ? 'Create Parcel' : 'Create Delivery' }}</h1>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+      <button class="tab-button" [class.active]="activeTab === 'delivery'" (click)="switchTab('delivery')">
+        <i class="fas fa-user"></i>
+        <span>{{ userRole === 'CUSTOMER' ? 'Recipient & Parcel' : 'Sender & Recipient' }}</span>
+      </button>
+      <button class="tab-button" [class.active]="activeTab === 'tracking'" (click)="switchTab('tracking')">
+        <i class="fas fa-map-marker-alt"></i>
+        <span>Location & Route</span>
+      </button>
+      <button class="tab-button" [class.active]="activeTab === 'preview'" (click)="switchTab('preview')">
+        <i class="fas fa-eye"></i>
+        <span>Review & Submit</span>
+      </button>
+    </div>
+
+    <div class="delivery-content">
+      <!-- Delivery Details Tab -->
+      <div class="tab-content" *ngIf="activeTab === 'delivery'">
+        <form [formGroup]="deliveryForm" class="delivery-form">
+        
+        <!-- Sender Details Section -->
+        <div class="form-section" *ngIf="userRole !== 'CUSTOMER'">
+          <h2 class="section-title">Sender Details</h2>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="senderName">Sender Name</label>
+              <div class="input-with-suggestions">
+                <input 
+                  type="text" 
+                  id="senderName" 
+                  formControlName="senderName"
+                  placeholder="Search for sender by name, email, or phone"
+                  autocomplete="off"
+                  (keydown)="onSenderKeyDown($event)"
+                  (focus)="showSenderSuggestions = true"
+                  (blur)="onSenderBlur()"
+                  [class.error]="isFieldInvalid('senderName')"
+                >
+                <!-- Sender Suggestions Dropdown -->
+                <div *ngIf="showSenderSuggestions && senderSuggestions.length > 0" class="suggestions-dropdown">
+                  <div
+                    *ngFor="let suggestion of senderSuggestions; let i = index"
+                    class="suggestion-item"
+                    [class.selected]="i === selectedSenderIndex"
+                    (click)="selectSenderSuggestion(suggestion)"
+                    (mouseenter)="selectedSenderIndex = i"
+                  >
+                    <div class="suggestion-content">
+                      <div class="suggestion-name">{{ suggestion.name }}</div>
+                      <div class="suggestion-details">
+                        <span class="suggestion-email">{{ suggestion.email }}</span>
+                        <span *ngIf="suggestion.phone" class="suggestion-phone">{{ suggestion.phone }}</span>
+                      </div>
+                    </div>
+                    <div class="suggestion-badge" [class.registered]="suggestion.isRegistered">
+                      <i class="fas" [class.fa-user]="suggestion.isRegistered" [class.fa-user-plus]="!suggestion.isRegistered"></i>
+                      <span>{{ suggestion.isRegistered ? 'Registered' : 'Contact' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="error-message" *ngIf="getFieldError('senderName')">
+                {{ getFieldError('senderName') }}
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="senderContact">Sender Contact</label>
+              <input 
+                type="tel" 
+                id="senderContact" 
+                formControlName="senderContact"
+                placeholder="Enter sender's contact number"
+                [class.error]="isFieldInvalid('senderContact')"
+              >
+              <div class="error-message" *ngIf="getFieldError('senderContact')">
+                {{ getFieldError('senderContact') }}
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="senderEmail">Sender Email</label>
+              <input 
+                type="email" 
+                id="senderEmail" 
+                formControlName="senderEmail"
+                placeholder="Enter sender's email"
+                [class.error]="isFieldInvalid('senderEmail')"
+              >
+              <div class="error-message" *ngIf="getFieldError('senderEmail')">
+                {{ getFieldError('senderEmail') }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recipient Details Section -->
+        <div class="form-section">
+          <h2 class="section-title">Recipient Details</h2>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="recipientName">Recipient Name</label>
+              <div class="input-with-suggestions">
+                <input 
+                  type="text" 
+                  id="recipientName" 
+                  formControlName="recipientName"
+                  placeholder="Search for recipient by name, email, or phone"
+                  autocomplete="off"
+                  (keydown)="onRecipientKeyDown($event)"
+                  (focus)="showRecipientSuggestions = true"
+                  (blur)="onRecipientBlur()"
+                  [class.error]="isFieldInvalid('recipientName')"
+                >
+                <!-- Recipient Suggestions Dropdown -->
+                <div *ngIf="showRecipientSuggestions && recipientSuggestions.length > 0" class="suggestions-dropdown">
+                  <div
+                    *ngFor="let suggestion of recipientSuggestions; let i = index"
+                    class="suggestion-item"
+                    [class.selected]="i === selectedRecipientIndex"
+                    (click)="selectRecipientSuggestion(suggestion)"
+                    (mouseenter)="selectedRecipientIndex = i"
+                  >
+                    <div class="suggestion-content">
+                      <div class="suggestion-name">{{ suggestion.name }}</div>
+                      <div class="suggestion-details">
+                        <span class="suggestion-email">{{ suggestion.email }}</span>
+                        <span *ngIf="suggestion.phone" class="suggestion-phone">{{ suggestion.phone }}</span>
+                      </div>
+                    </div>
+                    <div class="suggestion-badge" [class.registered]="suggestion.isRegistered">
+                      <i class="fas" [class.fa-user]="suggestion.isRegistered" [class.fa-user-plus]="!suggestion.isRegistered"></i>
+                      <span>{{ suggestion.isRegistered ? 'Registered' : 'Contact' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="error-message" *ngIf="getFieldError('recipientName')">
+                {{ getFieldError('recipientName') }}
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="recipientContact">Recipient Contact</label>
+              <input 
+                type="tel" 
+                id="recipientContact" 
+                formControlName="recipientContact"
+                placeholder="Enter recipient's contact number"
+                [class.error]="isFieldInvalid('recipientContact')"
+              >
+              <div class="error-message" *ngIf="getFieldError('recipientContact')">
+                {{ getFieldError('recipientContact') }}
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="recipientEmail">Recipient Email</label>
+              <input 
+                type="email" 
+                id="recipientEmail" 
+                formControlName="recipientEmail"
+                placeholder="Enter recipient's email"
+                [class.error]="isFieldInvalid('recipientEmail')"
+              >
+              <div class="error-message" *ngIf="getFieldError('recipientEmail')">
+                {{ getFieldError('recipientEmail') }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Parcel Details Section -->
+        <div class="form-section">
+          <h2 class="section-title">Parcel Details</h2>
+          
+          <div class="form-group">
+            <label for="parcelWeight">Parcel Weight (kg)</label>
+            <input 
+              type="number" 
+              id="parcelWeight" 
+              formControlName="parcelWeight"
+              placeholder="Enter parcel weight"
+              step="0.1"
+              min="0.1"
+              [class.error]="isFieldInvalid('parcelWeight')"
+            >
+            <div class="error-message" *ngIf="getFieldError('parcelWeight')">
+              {{ getFieldError('parcelWeight') }}
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="pricePerKg">Price per Kilogram</label>
+            <div class="input-with-icon">
+              <input 
+                type="number" 
+                id="pricePerKg" 
+                formControlName="pricePerKg"
+                placeholder="100.00"
+                step="0.01"
+                min="0.01"
+                [class.error]="isFieldInvalid('pricePerKg')"
+              >
+              <span class="currency-symbol">KSH</span>
+            </div>
+            <div class="error-message" *ngIf="getFieldError('pricePerKg')">
+              {{ getFieldError('pricePerKg') }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Price Calculation Section -->
+        <div class="form-section price-calculation">
+          <h2 class="section-title">Price Calculation</h2>
+          <div class="price-details">
+            <div class="price-row">
+              <span class="price-label">Price per Kilogram:</span>
+              <span class="price-value">{{ getFormattedPricePerKg() }}</span>
+            </div>
+            <div class="price-row">
+              <span class="price-label">Parcel Weight:</span>
+              <span class="price-value">{{ deliveryForm.get('parcelWeight')?.value || 0 }} kg</span>
+            </div>
+            <div class="price-row">
+              <span class="price-label">Weight Price:</span>
+              <span class="price-value">{{ getFormattedWeightPrice() }}</span>
+            </div>
+            <div class="price-row">
+              <span class="price-label">Delivery Fee:</span>
+              <span class="price-value">{{ getFormattedDeliveryFee() }}</span>
+            </div>
+            <div class="price-row total">
+              <span class="price-label">Total Price:</span>
+              <span class="price-value total-price">{{ getFormattedTotalPrice() }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" (click)="switchTab('tracking')" [disabled]="!isDeliveryTabValid()">
+            Next: Location & Route
+            <i class="fas fa-arrow-right"></i>
+          </button>
+        </div>
+
+        <!-- Map Section -  -->
+
+      </form>
+      </div>
+
+      <!-- Location & Route Tab -->
+      <div class="tab-content" *ngIf="activeTab === 'tracking'">
+        <div class="location-content">
+          <h2>Location & Route Setup</h2>
+          
+          <!-- Location Input Section -->
+          <div class="form-section" [formGroup]="deliveryForm">
+            <h3 class="section-title">Location Details</h3>
+            
+            <div class="location-grid">
+                          <div class="form-group address-input-group">
+  <label for="pickupRoute">Route</label>
+  <div class="address-input-container"><select id="pickupRoute" [value]="selectedPickupRouteId" (change)="onPickupRouteChange($event)"><option value="">Select route first</option><option *ngFor="let route of savedRoutes" [value]="route.id">{{route.name || (route.origin + ' → ' + route.destination)}}</option></select><i class="fas fa-route location-icon pickup-icon"></i></div>
+</div>
+<div class="form-group address-input-group">
+  <label for="pickupLocation">Pickup Transit Point</label>
+  <div class="address-input-container"><select id="pickupLocation" [value]="selectedPickupTransitPointId" (change)="onPickupTransitPointChange($event)" [disabled]="!selectedPickupRouteId" [class.error]="isFieldInvalid('pickupLocation')"><option value="">Select transit point</option><option *ngFor="let point of pickupTransitPoints" [value]="point.id">{{point.name}}</option></select><i class="fas fa-map-marker-alt location-icon pickup-icon"></i></div>
+  <div class="error-message" *ngIf="getFieldError('pickupLocation')">{{ getFieldError('pickupLocation') }}</div>
+</div><div class="form-group address-input-group" *ngIf="false">
+                <label for="destination">Destination</label>
+                <div class="address-input-container">
+                  <select
+                    id="destination"
+                    [value]="selectedDestinationRouteId"
+                    (change)="onSavedDestinationChange($event)"
+                    [class.error]="isFieldInvalid('destination')"
+                  >
+                    <option value="">Select saved route</option>
+                    <option *ngFor="let route of savedRoutes" [value]="route.id">
+                      {{ route.name || route.routeName || (route.origin + ' → ' + route.destination) }}
+                    </option>
+                  </select>
+                  <i class="fas fa-flag-checkered location-icon destination-icon"></i>
+                </div>
+                <div class="error-message" *ngIf="getFieldError('destination')">
+                  {{ getFieldError('destination') }}
+                </div>
+              </div>
+            </div>
+
+
+          </div>
+
+          <!-- Route Information -->
+          <div class="route-summary" *ngIf="routeDistance > 0">
+            <div class="route-card">
+              <div class="route-header">
+                <i class="fas fa-route"></i>
+                <h3>Route Information</h3>
+              </div>
+              <div class="route-details">
+                <div class="route-stat">
+                  <span class="stat-label">Distance:</span>
+                  <span class="stat-value">{{ routeDistance }} km</span>
+                </div>
+                <div class="route-stat">
+                  <span class="stat-label">Estimated Time:</span>
+                  <span class="stat-value">{{ routeEstimatedTime }} minutes</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Map View -->
+          <div class="map-section">
+            <div class="map-header">
+              <h3>Delivery Route Preview</h3>
+              <div class="map-legend">
+                <div class="legend-item">
+                  <div class="legend-marker pickup-marker"></div>
+                  <span>Pickup Location</span>
+                </div>
+                <div class="legend-item">
+                  <div class="legend-marker delivery-marker"></div>
+                  <span>Delivery Location</span>
+                </div>
+              </div>
+              <div class="map-controls">
+                <button type="button" class="btn-secondary" (click)="fitMapToMarkers()">
+                  <i class="fas fa-expand-arrows-alt"></i>
+                  Fit to Markers
+                </button>
+                <button type="button" class="btn-secondary" (click)="toggleRouteDisplay()">
+                  <i class="fas fa-route"></i>
+                  {{ showRoute ? 'Hide Route' : 'Show Route' }}
+                </button>
+              </div>
+            </div>
+            
+            <app-map
+              #trackingMapComponent
+              [height]="'500px'"
+              [markers]="mapMarkers"
+              [center]="mapCenter"
+              [showRoute]="showRoute && mapMarkers.length >= 2"
+              [zoom]="mapMarkers.length > 1 ? 10 : 13"
+              (mapReady)="onMapReady($event)"
+              (markerClick)="onMarkerClick($event)"
+              (mapClick)="onMapClick($event)"
+              (mapErrorEvent)="onMapError($event)"
+              (routeUpdated)="onRouteUpdated($event)">
+            </app-map>
+          </div>
+
+          <!-- Form Actions -->
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" (click)="switchTab('delivery')">
+              <i class="fas fa-arrow-left"></i>
+              Back: {{ userRole === 'CUSTOMER' ? 'Recipient & Parcel' : 'Sender & Recipient' }}
+            </button>
+            <button type="button" class="btn-primary" (click)="switchTab('preview')" [disabled]="!isTrackingTabValid()">
+              Next: Review & Submit
+              <i class="fas fa-arrow-right"></i>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Preview Tab -->
+      <div class="tab-content" *ngIf="activeTab === 'preview'">
+        <div class="preview-content">
+          <h2>Delivery Preview</h2>
+          <div class="preview-card">
+            <div class="preview-section" *ngIf="userRole !== 'CUSTOMER'">
+              <h3>Sender Information</h3>
+              <div class="preview-details">
+                <p><strong>Name:</strong> {{ deliveryForm.get('senderName')?.value || 'Not specified' }}</p>
+                <p><strong>Contact:</strong> {{ deliveryForm.get('senderContact')?.value || 'Not specified' }}</p>
+                <p><strong>Email:</strong> {{ deliveryForm.get('senderEmail')?.value || 'Not specified' }}</p>
+              </div>
+            </div>
+            <div class="preview-section">
+              <h3>Recipient Information</h3>
+              <div class="preview-details">
+                <p><strong>Name:</strong> {{ deliveryForm.get('recipientName')?.value || 'Not specified' }}</p>
+                <p><strong>Contact:</strong> {{ deliveryForm.get('recipientContact')?.value || 'Not specified' }}</p>
+                <p><strong>Email:</strong> {{ deliveryForm.get('recipientEmail')?.value || 'Not specified' }}</p>
+              </div>
+            </div>
+            <div class="preview-section">
+              <h3>Delivery Details</h3>
+              <div class="preview-details">
+                <p><strong>Pickup:</strong> {{ deliveryForm.get('pickupLocation')?.value || 'Not specified' }}</p>
+                <p><strong>Destination:</strong> {{ deliveryForm.get('destination')?.value || 'Not specified' }}</p>
+                <p><strong>Weight:</strong> {{ deliveryForm.get('parcelWeight')?.value || 0 }} kg</p>
+                <p><strong>Price per kg:</strong> {{ getFormattedPricePerKg() }}</p>
+                <p><strong>Total Price:</strong> {{ getFormattedTotalPrice() }}</p>
+              </div>
+            </div>
+          </div>
+          <!-- Add Create Delivery button here -->
+          <div class="form-actions preview-actions">
+            <button type="button" class="btn-secondary" (click)="switchTab('tracking')">
+              <i class="fas fa-arrow-left"></i>
+              Back: Location & Route
+            </button>
+            <button type="button" class="submit-btn" (click)="onSubmit()" [disabled]="deliveryForm.invalid || isSubmitting">
+              <i class="fas fa-spinner fa-spin" *ngIf="isSubmitting"></i>
+              {{ isSubmitting ? 'Creating Delivery...' : getSubmitButtonText() }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+  </main>
+</div>

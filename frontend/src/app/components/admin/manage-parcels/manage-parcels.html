@@ -1,0 +1,135 @@
+<div class="admin-container">
+  <!-- Shared Sidebar -->
+  <app-sidebar></app-sidebar>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    <!-- Header -->
+    <div class="content-header">
+      <h1>All Parcels</h1>
+      <button class="btn-new-parcel" routerLink="/admin-create-delivery">
+        New Parcel
+      </button>
+    </div>
+
+    <!-- Filter Section -->
+    <div class="filter-section">
+      <h3>Search & Filter</h3>
+      <div class="filter-controls">
+        <div class="search-bar">
+          <i class="fas fa-search search-icon"></i>
+          <input 
+            type="text" 
+            placeholder="Search by Parcel ID, Sender, Receiver"
+            [(ngModel)]="searchTerm"
+            (keyup.enter)="onSearch()"
+            (blur)="onSearch()"
+            class="search-input"
+          >
+        </div>
+        
+        <select [(ngModel)]="selectedStatus" (change)="onStatusChange()" class="filter-select">
+          <option value="">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="assigned">Assigned</option>
+          <option value="picked_up">Picked Up</option>
+          <option value="in_transit">In Transit</option>
+          <option value="delivered_to_recipient">Delivered to Recipient</option>
+          <option value="delivered">Delivered</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        
+        <button class="btn-clear-filters" (click)="clearFilters()">
+          <i class="fas fa-times"></i>
+          Clear Filters
+        </button>
+      </div>
+    </div>
+
+    <!-- Parcels Table -->
+    <div class="table-container">
+      <table class="parcels-table">
+        <thead>
+          <tr>
+            <th>Parcel ID</th>
+            <th>Sender</th>
+            <th>Receiver</th>
+            <th>Status</th>
+            <th>Driver</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngIf="loading">
+            <td colspan="6" class="loading-cell">
+              <div class="loading-spinner">Loading parcels...</div>
+            </td>
+          </tr>
+          <tr *ngIf="!loading && parcels.length === 0">
+            <td colspan="6" class="no-data-cell">
+              <div class="no-data">No parcels found</div>
+            </td>
+          </tr>
+          <tr *ngFor="let parcel of paginatedParcels">
+            <td>{{ parcel.trackingNumber }}</td>
+            <td>{{ parcel.senderName }}</td>
+            <td>{{ parcel.recipientName }}</td>
+            <td>
+              <span class="status-badge" [ngClass]="getStatusClass(parcel.status)">
+                {{ getStatusDisplayName(parcel.status) }}
+              </span>
+            </td>
+            <td>
+              <span class="driver-name" [ngClass]="{'unassigned': !parcel.driver}">
+                {{ parcel.driver?.name || 'Unassigned' }}
+              </span>
+            </td>
+            <td>
+              <button class="btn-view-details" (click)="viewDetails(parcel.id)">
+                View Details
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination-container" *ngIf="!loading && parcels.length > 0">
+      <div class="pagination-info">
+        <span>Showing {{ (currentPage - 1) * itemsPerPage + 1 }} to {{ endIndex }} of {{ totalParcels }} parcels</span>
+      </div>
+      <div class="pagination-controls">
+        <button 
+          class="pagination-btn" 
+          [disabled]="currentPage === 1"
+          (click)="goToPreviousPage()"
+        >
+          <i class="fas fa-chevron-left"></i>
+          Previous
+        </button>
+        
+        <div class="page-numbers">
+          <button 
+            *ngFor="let page of pageNumbers"
+            class="page-number"
+            [class.active]="page === currentPage"
+            (click)="goToPage(page)"
+          >
+            {{ page }}
+          </button>
+        </div>
+        
+        <button 
+          class="pagination-btn" 
+          [disabled]="currentPage === totalPages"
+          (click)="goToNextPage()"
+        >
+          Next
+          <i class="fas fa-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

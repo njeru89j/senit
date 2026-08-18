@@ -1,0 +1,232 @@
+<div class="delivery-history">
+  <!-- Shared Sidebar -->
+  <app-sidebar></app-sidebar>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Header -->
+    <div class="content-header animate-fade-in-up">
+      <h1 class="page-title">Delivery History</h1>
+    </div>
+
+    <!-- Search and Filter Section -->
+    <div class="search-filter-section animate-fade-in-up">
+      <div class="search-container">
+        <div class="search-bar">
+          <i class="fas fa-search search-icon"></i>
+          <input 
+            type="text" 
+            placeholder="Search by tracking number, customer, or address..." 
+            [(ngModel)]="searchTerm"
+            class="search-input"
+          >
+          <button 
+            *ngIf="searchTerm"
+            class="clear-search-btn" 
+            (click)="clearSearch()"
+            type="button"
+          >
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+      
+      <div class="filter-container">
+        <button class="filter-btn" (click)="toggleStatusDropdown()">
+          <span>{{ selectedStatus === 'all' ? 'All Status' : getStatusDisplayName(selectedStatus) }}</span>
+          <i class="fas fa-chevron-down" [class.rotated]="showStatusDropdown"></i>
+        </button>
+        
+        <!-- Status Dropdown -->
+        <div class="filter-dropdown status-dropdown" *ngIf="showStatusDropdown">
+          <div class="filter-option" (click)="selectStatus('all')">
+            <span>All Status</span>
+          </div>
+          <div class="filter-option" (click)="selectStatus('delivered')">
+            <span>Delivered</span>
+          </div>
+          <div class="filter-option" (click)="selectStatus('completed')">
+            <span>Completed</span>
+          </div>
+          <div class="filter-option" (click)="selectStatus('delivered_to_recipient')">
+            <span>Delivered to Recipient</span>
+          </div>
+          <div class="filter-option" (click)="selectStatus('cancelled')">
+            <span>Cancelled</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-container">
+        <button class="filter-btn" (click)="toggleRatingDropdown()">
+          <span>{{ selectedRating === 'all' ? 'All Ratings' : selectedRating + ' Stars' }}</span>
+          <i class="fas fa-chevron-down" [class.rotated]="showRatingDropdown"></i>
+        </button>
+        
+        <!-- Rating Dropdown -->
+        <div class="filter-dropdown rating-dropdown" *ngIf="showRatingDropdown">
+          <div class="filter-option" (click)="selectRating('all')">
+            <span>All Ratings</span>
+          </div>
+          <div class="filter-option" (click)="selectRating('5')">
+            <span>5 Stars</span>
+          </div>
+          <div class="filter-option" (click)="selectRating('4')">
+            <span>4 Stars</span>
+          </div>
+          <div class="filter-option" (click)="selectRating('3')">
+            <span>3 Stars</span>
+          </div>
+          <div class="filter-option" (click)="selectRating('2')">
+            <span>2 Stars</span>
+          </div>
+          <div class="filter-option" (click)="selectRating('1')">
+            <span>1 Star</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Clear Filters Button -->
+      <div class="clear-filters-container" *ngIf="hasActiveFilters()">
+        <button class="clear-filters-btn" (click)="clearFilters()">
+          <i class="fas fa-times"></i>
+          Clear Filters
+        </button>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    <div *ngIf="isLoading" class="loading-container">
+      <div class="loading-spinner"></div>
+      <p>Loading delivery history...</p>
+    </div>
+
+    <!-- Error State -->
+    <div *ngIf="error && !isLoading" class="error-container">
+      <i class="fas fa-exclamation-triangle"></i>
+      <h3>Error Loading History</h3>
+      <p>{{ error }}</p>
+      <button class="btn btn-primary" (click)="loadDeliveryHistory()">Try Again</button>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div class="dashboard-content" *ngIf="!isLoading && !error">
+      <!-- Results Summary -->
+      <div class="results-summary">
+        <p>
+          Showing {{ startItem }}-{{ endItem }} of {{ filteredHistory.length }} deliveries
+          <span *ngIf="hasActiveFilters()">(filtered)</span>
+        </p>
+      </div>
+
+      <!-- No Results -->
+      <div *ngIf="paginatedHistory.length === 0" class="no-data">
+        <i class="fas fa-history"></i>
+        <h3>No delivery history found</h3>
+        <p *ngIf="hasActiveFilters()">Try adjusting your search or filters</p>
+        <p *ngIf="!hasActiveFilters()">You haven't completed any deliveries yet</p>
+      </div>
+
+      <!-- Delivery History Cards -->
+      <div class="cards-container animate-fade-in-up" *ngIf="paginatedHistory.length > 0">
+        <div class="card" *ngFor="let delivery of paginatedHistory">
+          <div class="card-header">
+            <div class="tracking-number">{{ delivery.trackingNumber }}</div>
+            <span class="status-badge" [ngClass]="getStatusClass(delivery.status)">
+              {{ getStatusDisplayName(delivery.status) }}
+            </span>
+          </div>
+          
+          <div class="card-body">
+            <div class="info-row">
+              <div class="info-label">
+                <i class="fas fa-map-marker-alt"></i>
+                Pickup
+              </div>
+              <div class="info-value pickup-address">{{ delivery.pickupAddress }}</div>
+            </div>
+            
+            <div class="info-row">
+              <div class="info-label">
+                <i class="fas fa-flag-checkered"></i>
+                Delivery
+              </div>
+              <div class="info-value delivery-address">{{ delivery.deliveryAddress }}</div>
+            </div>
+            
+            <div class="info-row">
+              <div class="info-label">
+                <i class="fas fa-user"></i>
+                Customer
+              </div>
+              <div class="info-value customer-name">{{ delivery.customerName }}</div>
+            </div>
+            
+            <div class="info-row">
+              <div class="info-label">
+                <i class="fas fa-star"></i>
+                Rating
+              </div>
+              <div class="info-value rating">
+                <div class="stars" [title]="delivery.customerRating ? delivery.customerRating + ' stars' : 'No rating yet'">
+                  {{ getRatingStars(delivery.customerRating) }}
+                </div>
+                <div class="rating-text" *ngIf="delivery.customerRating; else noRating">
+                  {{ getRatingDisplay(delivery.customerRating) }}
+                </div>
+                <ng-template #noRating>
+                  <div class="no-rating">No rating yet</div>
+                </ng-template>
+              </div>
+            </div>
+          </div>
+          
+          <div class="card-footer">
+            <button class="btn btn-outline" (click)="viewParcelDetails(delivery.id)">
+              <i class="fas fa-eye"></i>
+              View Details
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination-container" *ngIf="totalPages > 1">
+        <div class="pagination-info">
+          <span>Page {{ currentPage }} of {{ totalPages }}</span>
+        </div>
+        
+        <div class="pagination-controls">
+          <button 
+            class="pagination-btn" 
+            [disabled]="currentPage === 1"
+            (click)="previousPage()"
+          >
+            <i class="fas fa-chevron-left"></i>
+            Previous
+          </button>
+          
+          <div class="page-numbers">
+            <button 
+              *ngFor="let page of pages"
+              class="page-btn" 
+              [class.active]="page === currentPage"
+              (click)="goToPage(page)"
+            >
+              {{ page }}
+            </button>
+          </div>
+          
+          <button 
+            class="pagination-btn" 
+            [disabled]="currentPage === totalPages"
+            (click)="nextPage()"
+          >
+            Next
+            <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div> 

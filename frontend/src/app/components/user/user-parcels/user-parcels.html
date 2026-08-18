@@ -1,0 +1,187 @@
+<div class="user-parcels">
+  <!-- Shared Sidebar -->
+  <app-sidebar></app-sidebar>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Header -->
+    <div class="content-header">
+      <div class="header-left">
+        <h1>My Parcels</h1>
+      </div>
+      <div class="header-right">
+        <button 
+          class="refresh-btn"
+          (click)="refreshParcels()"
+          [disabled]="loading"
+        >
+          <i class="fas fa-sync-alt" [class.fa-spin]="loading"></i>
+          {{ loading ? 'Loading...' : 'Refresh' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div class="dashboard-content">
+      <!-- Tabs -->
+      <div class="tabs">
+        <button 
+          class="tab-button" 
+          [class.active]="activeTab === 'sent'"
+          (click)="switchTab('sent')"
+        >
+          Sent
+        </button>
+        <button 
+          class="tab-button" 
+          [class.active]="activeTab === 'received'"
+          (click)="switchTab('received')"
+        >
+          Received
+        </button>
+      </div>
+
+    <!-- Summary Cards -->
+    <div class="summary-section">
+      <div class="summary-cards">
+        <div class="summary-card">
+          <div class="card-icon">
+            <i class="fas fa-paper-plane"></i>
+          </div>
+          <div class="card-content">
+            <h3 class="card-title">Total Parcels {{ activeTab === 'sent' ? 'Sent' : 'Received' }}</h3>
+            <p class="card-value">{{ getCurrentTotalParcels() }}</p>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="card-icon">
+            <i class="fas fa-calendar"></i>
+          </div>
+          <div class="card-content">
+            <h3 class="card-title">Most Recent {{ activeTab === 'sent' ? 'Shipment' : 'Delivery' }}</h3>
+            <p class="card-value">{{ getCurrentMostRecentDate() || 'No parcels yet' }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    <div *ngIf="loading" class="loading-section">
+      <div class="loading-spinner">
+        <i class="fas fa-spinner fa-spin"></i>
+        <p>Loading parcels...</p>
+      </div>
+    </div>
+
+    <!-- Filters and Search -->
+    <div class="filters-section" *ngIf="!loading">
+      <div class="filters-container">
+        <div class="filter-group">
+          <label for="status-filter">Status</label>
+          <select 
+            id="status-filter" 
+            class="filter-select"
+            [(ngModel)]="statusFilter"
+          >
+            <option *ngFor="let option of statusOptions" [value]="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </div>
+        
+        <div class="search-group">
+          <div class="search-container">
+            <i class="fas fa-search search-icon"></i>
+            <input 
+              type="text" 
+              class="search-input" 
+              placeholder="Search by tracking number, addresses, or names"
+              [(ngModel)]="searchQuery"
+            >
+          </div>
+        </div>
+        
+        <div class="clear-filters-group">
+          <button 
+            class="clear-filters-btn"
+            (click)="clearFilters()"
+            [disabled]="!statusFilter && !searchQuery"
+          >
+            <i class="fas fa-times"></i>
+            Clear Filters
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Parcels Table -->
+    <div class="table-section" *ngIf="!loading">
+      <div class="table-container">
+        <table class="parcels-table">
+          <thead>
+            <tr>
+              <th>Tracking Number</th>
+              <th>Weight</th>
+              <th>Status</th>
+              <th>Pickup Address</th>
+              <th>Delivery Address</th>
+              <th>Created Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr 
+              *ngFor="let parcel of getFilteredParcels()"
+              class="parcel-row"
+            >
+              <td class="parcel-id" (click)="viewParcelDetails(parcel.id)">{{ parcel.trackingNumber }}</td>
+              <td class="parcel-weight" (click)="viewParcelDetails(parcel.id)">{{ parcel.weight }}kg</td>
+              <td (click)="viewParcelDetails(parcel.id)">
+                <span class="status-badge" [ngClass]="getStatusClass(parcel.status)">
+                  {{ getStatusDisplayName(parcel.status) }}
+                </span>
+              </td>
+              <td class="address" (click)="viewParcelDetails(parcel.id)">{{ parcel.pickupAddress }}</td>
+              <td class="address" (click)="viewParcelDetails(parcel.id)">{{ parcel.deliveryAddress }}</td>
+              <td class="delivery-date" (click)="viewParcelDetails(parcel.id)">{{ parcel.createdAt | date:'shortDate' }}</td>
+              <td class="actions">
+                <button 
+                  class="action-btn view-btn" 
+                  (click)="viewParcelDetails(parcel.id)"
+                  title="View Details"
+                >
+                  <i class="fas fa-eye"></i>
+                </button>
+                <button 
+                  *ngIf="canMarkAsComplete(parcel.status)"
+                  class="action-btn complete-btn" 
+                  (click)="markAsComplete(parcel)"
+                  title="Mark as Complete"
+                >
+                  <i class="fas fa-check-double"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        
+        <!-- Empty State -->
+        <div *ngIf="getFilteredParcels().length === 0" class="empty-state">
+          <div class="empty-state-content">
+            <i class="fas fa-box-open"></i>
+            <h3>No parcels found</h3>
+            <p *ngIf="!statusFilter && !searchQuery">
+              {{ activeTab === 'sent' ? 'You haven\'t sent any parcels yet.' : 'You haven\'t received any parcels yet.' }}
+            </p>
+            <p *ngIf="statusFilter || searchQuery">
+              No parcels match your current filters. Try adjusting your search criteria.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    </div>
+  </main>
+</div> 

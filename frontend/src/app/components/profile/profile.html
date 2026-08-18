@@ -1,0 +1,562 @@
+<div class="profile-container">
+  <!-- Shared Sidebar -->
+  <app-sidebar></app-sidebar>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <div class="content-header">
+      <h1 class="page-title">Profile</h1>
+    </div>
+
+                 <div class="profile-content">
+        
+       
+       
+
+       <!-- Loading Overlay -->
+      <div class="loading-overlay" *ngIf="isLoading">
+        <div class="loading-spinner">
+          <i class="fas fa-spinner fa-spin"></i>
+          <span>Loading...</span>
+        </div>
+      </div>
+
+      <!-- Profile Picture Section -->
+      <div class="profile-section scroll-animate" #profilePictureSection>
+        <div class="profile-picture-section">
+          <div class="profile-picture-container">
+            <img 
+              [src]="imagePreview || userProfile?.profilePicture || '/images/premium_photo-1681487863055-6e87-removebg-preview.jpg'" 
+              alt="Profile Picture" 
+              class="profile-picture"
+            >
+            <div class="profile-picture-overlay">
+              <label for="profile-image-upload" class="upload-icon">
+                <i class="fas fa-camera"></i>
+              </label>
+              <input 
+                type="file" 
+                id="profile-image-upload" 
+                accept="image/*" 
+                (change)="onImageSelected($event)"
+                style="display: none;"
+              >
+            </div>
+          </div>
+          <div class="profile-info">
+            <h2 class="user-name">{{ userProfile?.name || 'Loading...' }}</h2>
+            <p class="profile-label">Profile Picture</p>
+            <button 
+              class="btn-upload-picture" 
+              (click)="uploadProfileImage()"
+              [disabled]="!selectedImage || isLoading"
+            >
+              <i class="fas fa-upload"></i>
+              Upload New Picture
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Information Section -->
+      <div class="profile-section scroll-animate" #personalInfoSection>
+        <h2 class="section-title">Personal Information</h2>
+        <form [formGroup]="profileForm" (ngSubmit)="saveProfileChanges()" class="profile-form">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="fullName">Full name</label>
+              <input 
+                type="text" 
+                id="fullName" 
+                formControlName="name"
+                placeholder="Enter your full name"
+                [class.error]="isFieldInvalid(profileForm, 'name')"
+              >
+              <div class="error-message" *ngIf="getFieldError(profileForm, 'name')">
+                {{ getFieldError(profileForm, 'name') }}
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="email">Email</label>
+              <input 
+                type="email" 
+                id="email" 
+                formControlName="email"
+                placeholder="Enter your email address"
+                [class.error]="isFieldInvalid(profileForm, 'email')"
+              >
+              <div class="error-message" *ngIf="getFieldError(profileForm, 'email')">
+                {{ getFieldError(profileForm, 'email') }}
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="phone">Phone number</label>
+              <input 
+                type="tel" 
+                id="phone" 
+                formControlName="phone"
+                placeholder="Enter your phone number"
+                [class.error]="isFieldInvalid(profileForm, 'phone')"
+              >
+              <div class="error-message" *ngIf="getFieldError(profileForm, 'phone')">
+                {{ getFieldError(profileForm, 'phone') }}
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="address">Address</label>
+              <input 
+                type="text" 
+                id="address" 
+                formControlName="address"
+                placeholder="Enter your street address"
+                [class.error]="isFieldInvalid(profileForm, 'address')"
+              >
+              <div class="error-message" *ngIf="getFieldError(profileForm, 'address')">
+                {{ getFieldError(profileForm, 'address') }}
+              </div>
+            </div>
+          </div>
+          
+          <div class="form-actions">
+            <button type="submit" class="btn-save-changes" [disabled]="isLoading || !hasProfileChanges()">
+              <i class="fas fa-save"></i>
+              Save changes
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Change Password Section -->
+      <div class="profile-section scroll-animate" #passwordSection>
+        <h2 class="section-title">Change Password</h2>
+        <form [formGroup]="passwordForm" (ngSubmit)="changePassword()" class="password-form">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="currentPassword">Current Password</label>
+              <div class="password-input-container">
+                <input 
+                  [type]="showCurrentPassword ? 'text' : 'password'" 
+                  id="currentPassword" 
+                  formControlName="currentPassword"
+                  placeholder="Enter current password"
+                  [class.error]="isFieldInvalid(passwordForm, 'currentPassword')"
+                >
+                <button 
+                  type="button" 
+                  class="password-toggle-btn"
+                  (click)="toggleCurrentPasswordVisibility()"
+                  [attr.aria-label]="showCurrentPassword ? 'Hide password' : 'Show password'"
+                >
+                  <i [class]="showCurrentPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                </button>
+              </div>
+              <div class="error-message" *ngIf="getFieldError(passwordForm, 'currentPassword')">
+                {{ getFieldError(passwordForm, 'currentPassword') }}
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="newPassword">New Password</label>
+              <div class="password-input-container">
+                <input 
+                  [type]="showNewPassword ? 'text' : 'password'" 
+                  id="newPassword" 
+                  formControlName="newPassword"
+                  placeholder="Enter new password"
+                  [class.error]="isFieldInvalid(passwordForm, 'newPassword')"
+                >
+                <button 
+                  type="button" 
+                  class="password-toggle-btn"
+                  (click)="toggleNewPasswordVisibility()"
+                  [attr.aria-label]="showNewPassword ? 'Hide password' : 'Show password'"
+                >
+                  <i [class]="showNewPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                </button>
+              </div>
+              <div class="error-message" *ngIf="getFieldError(passwordForm, 'newPassword')">
+                {{ getFieldError(passwordForm, 'newPassword') }}
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="confirmPassword">Confirm New Password</label>
+              <div class="password-input-container">
+                <input 
+                  [type]="showConfirmPassword ? 'text' : 'password'" 
+                  id="confirmPassword" 
+                  formControlName="confirmPassword"
+                  placeholder="Confirm new password"
+                  [class.error]="isFieldInvalid(passwordForm, 'confirmPassword')"
+                >
+                <button 
+                  type="button" 
+                  class="password-toggle-btn"
+                  (click)="toggleConfirmPasswordVisibility()"
+                  [attr.aria-label]="showConfirmPassword ? 'Hide password' : 'Show password'"
+                >
+                  <i [class]="showConfirmPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                </button>
+              </div>
+              <div class="error-message" *ngIf="getFieldError(passwordForm, 'confirmPassword')">
+                {{ getFieldError(passwordForm, 'confirmPassword') }}
+              </div>
+            </div>
+          </div>
+          
+          <div class="form-actions">
+            <button type="submit" class="btn-save-changes" [disabled]="isLoading || !hasPasswordChanges() || isPasswordFormEmpty()">
+              <i class="fas fa-key"></i>
+              Save changes
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Driver Application Section -->
+      <div class="profile-section driver-application scroll-animate" #driverApplicationSection>
+        
+        <h2 class="section-title">
+          <span *ngIf="userProfile?.role === 'CUSTOMER'">Become a Driver</span>
+          <span *ngIf="userProfile?.role === 'DRIVER'">Driver Status & Vehicle Information</span>
+          <span *ngIf="userProfile?.role === 'ADMIN'">Driver Application</span>
+        </h2>
+        
+        <!-- Admin message - Show for ADMIN role -->
+        <div *ngIf="userProfile?.role === 'ADMIN'" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #dee2e6; text-align: center; margin-bottom: 20px;">
+          <i class="fas fa-info-circle" style="color: #6c757d; font-size: 24px; margin-bottom: 10px;"></i>
+          <h3 style="color: #6c757d; margin-bottom: 10px;">Admin Access</h3>
+          <p style="color: #6c757d; margin: 0;">Driver applications are not available for admin users. You can manage driver applications from the admin dashboard.</p>
+        </div>
+
+        <!-- Application Status Display - Only show if user has applied -->
+        <div class="application-status" *ngIf="driverApplicationStatus && driverApplicationStatus !== 'NOT_APPLIED'">
+          <div class="status-card" [ngClass]="getStatusClass(driverApplicationStatus)">
+            <div class="status-icon">
+              <i [class]="getStatusIcon(driverApplicationStatus)"></i>
+            </div>
+            <div class="status-content">
+              <h3>Application Status: {{ getStatusText(driverApplicationStatus) }}</h3>
+              <p *ngIf="driverApplicationStatus === 'PENDING'">
+                Your driver application is under review. We'll notify you once a decision is made.
+              </p>
+              <p *ngIf="driverApplicationStatus === 'APPROVED'">
+                Congratulations! Your application has been approved. You can now start accepting delivery assignments.
+              </p>
+              <p *ngIf="driverApplicationStatus === 'REJECTED'">
+                Your application was not approved. Reason: {{ driverRejectionReason || 'No reason provided' }}
+              </p>
+              <div class="application-details" *ngIf="driverApplication">
+                <p *ngIf="driverApplication.applicationDate"><strong>Applied on:</strong> {{ driverApplication.applicationDate | date:'medium' }}</p>
+                <p *ngIf="driverApplication.approvalDate"><strong>Processed on:</strong> {{ driverApplication.approvalDate | date:'medium' }}</p>
+                <p *ngIf="driverRejectionReason"><strong>Rejection Reason:</strong> {{ driverRejectionReason }}</p>
+              </div>
+              
+              <!-- Reapply button for rejected applications -->
+              <div class="reapply-section" *ngIf="driverApplicationStatus === 'REJECTED'">
+                <p class="reapply-text">
+                  <strong>Good News!</strong> You can reapply for driver status at any time.
+                </p>
+                <button 
+                  type="button" 
+                  class="reapply-button"
+                  (click)="showReapplyForm = true"
+                  [disabled]="isLoading"
+                >
+                  <i class="fas fa-redo"></i>
+                  Reapply Now
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Vehicle Information Section - Only for DRIVER role -->
+        <div class="vehicle-information" *ngIf="userProfile?.role === 'DRIVER'">
+          <h3 class="vehicle-section-title">
+            <i class="fas fa-car"></i>
+            Vehicle Details
+          </h3>
+          <div class="vehicle-details-grid">
+            <div class="vehicle-detail-card">
+              <div class="detail-icon">
+                <i class="fas fa-id-card"></i>
+              </div>
+              <div class="detail-content">
+                <h4>Driver's License</h4>
+                <p>{{ userProfile?.licenseNumber || 'Not provided' }}</p>
+              </div>
+            </div>
+            
+            <div class="vehicle-detail-card">
+              <div class="detail-icon">
+                <i class="fas fa-car-side"></i>
+              </div>
+              <div class="detail-content">
+                <h4>Vehicle Type</h4>
+                <p>{{ getVehicleTypeDisplay(userProfile?.vehicleType) || 'Not specified' }}</p>
+              </div>
+            </div>
+            
+            <div class="vehicle-detail-card">
+              <div class="detail-icon">
+                <i class="fas fa-hashtag"></i>
+              </div>
+              <div class="detail-content">
+                <h4>Registration Number</h4>
+                <p>{{ userProfile?.vehicleNumber || 'Not provided' }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="route-selection-box" style="margin-top: 20px; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; background: #f8fafc;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+              <h3 class="vehicle-section-title" style="margin: 0;">
+                <i class="fas fa-route"></i>
+                Routes Served
+              </h3>
+              <span style="color: #475569; font-size: 0.9rem;">Up to 3 routes</span>
+            </div>
+
+            <div *ngIf="savedRoutes.length; else noRoutes" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #f8fafc;">
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
+                <label *ngFor="let route of savedRoutes" style="display: flex; align-items: center; cursor: pointer; margin: 0;">
+                  <input
+                    type="checkbox"
+                    [checked]="selectedDriverRoutes.includes(route.id)"
+                    (change)="toggleDriverRoute(route.id)"
+                    [disabled]="selectedDriverRoutes.length >= 3 && !selectedDriverRoutes.includes(route.id)"
+                    style="margin-right: 8px; cursor: pointer; width: 18px; height: 18px;"
+                  >
+                  <span style="font-size: 0.9rem; color: #374151;">
+                    {{ route.name || route.routeName || (route.origin + ' → ' + route.destination) }}
+                  </span>
+                </label>
+              </div>
+              <div style="margin-top: 8px; font-size: 0.85rem; color: #6b7280;">
+                Selected: {{ selectedDriverRoutes.length }}/3
+              </div>
+            </div>
+
+            <ng-template #noRoutes>
+              <p style="margin: 0; color: #64748b;">No saved routes available yet.</p>
+            </ng-template>
+
+            <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+              <button type="button" class="btn-save-changes" (click)="saveDriverRoutes()" [disabled]="isLoading">
+                <i class="fas fa-save"></i>
+                Save routes
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Application Form - Only show for CUSTOMER role who haven't applied or were rejected -->
+        <div class="application-form" *ngIf="userProfile?.role === 'CUSTOMER' && (!driverApplicationStatus || driverApplicationStatus === 'NOT_APPLIED' || driverApplicationStatus === 'REJECTED' || showReapplyForm)">
+          <div class="form-header" *ngIf="driverApplicationStatus === 'REJECTED' && showReapplyForm">
+            <h3 class="form-title">
+              <i class="fas fa-redo"></i>
+              Reapply for Driver Status
+            </h3>
+            <p class="form-description">
+              Please update your application with any necessary corrections or additional information.
+            </p>
+          </div>
+          
+          <div class="form-header" *ngIf="!showReapplyForm">
+            <h3 class="form-title">
+              <i class="fas fa-truck"></i>
+              Driver Application
+            </h3>
+            <p class="form-description">
+              Fill out the application below and we'll review your information.
+            </p>
+          </div>
+          
+          <form [formGroup]="driverApplicationForm" (ngSubmit)="submitDriverApplication()" class="driver-form">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="licenseNumber">Driver's License Number *</label>
+                <input 
+                  type="text" 
+                  id="licenseNumber" 
+                  formControlName="licenseNumber"
+                  placeholder="Enter your driver's license number"
+                  [class.error]="isFieldInvalid(driverApplicationForm, 'licenseNumber')"
+                >
+                <div class="error-message" *ngIf="getFieldError(driverApplicationForm, 'licenseNumber')">
+                  {{ getFieldError(driverApplicationForm, 'licenseNumber') }}
+                </div>
+              </div>
+              
+              <div class="form-group">
+                <label for="vehicleNumber">Vehicle Registration Number</label>
+                <input 
+                  type="text" 
+                  id="vehicleNumber" 
+                  formControlName="vehicleNumber"
+                  placeholder="Enter your vehicle registration number"
+                  [class.error]="isFieldInvalid(driverApplicationForm, 'vehicleNumber')"
+                >
+                <div class="error-message" *ngIf="getFieldError(driverApplicationForm, 'vehicleNumber')">
+                  {{ getFieldError(driverApplicationForm, 'vehicleNumber') }}
+                </div>
+              </div>
+              
+              <div class="form-group">
+                <label for="vehicleType">Vehicle Type</label>
+                <select 
+                  id="vehicleType" 
+                  formControlName="vehicleType"
+                  [class.error]="isFieldInvalid(driverApplicationForm, 'vehicleType')"
+                >
+                  <option value="">Select vehicle type</option>
+                  <option value="MOTORCYCLE">Motorcycle</option>
+                  <option value="CAR">Car</option>
+                  <option value="VAN">Van</option>
+                  <option value="TRUCK">Truck</option>
+                </select>
+                <div class="error-message" *ngIf="getFieldError(driverApplicationForm, 'vehicleType')">
+                  {{ getFieldError(driverApplicationForm, 'vehicleType') }}
+                </div>
+              </div>
+              
+              <div class="form-group full-width">
+                <label for="reason">Why do you want to become a driver?</label>
+                <textarea 
+                  id="reason" 
+                  formControlName="reason"
+                  placeholder="Tell us why you'd like to join our delivery team..."
+                  rows="4"
+                  [class.error]="isFieldInvalid(driverApplicationForm, 'reason')"
+                ></textarea>
+                <div class="error-message" *ngIf="getFieldError(driverApplicationForm, 'reason')">
+                  {{ getFieldError(driverApplicationForm, 'reason') }}
+                </div>
+              </div>
+            </div>
+            
+            <div class="form-actions">
+              <button type="submit" class="btn-submit-application" [disabled]="isLoading || !driverApplicationForm.valid || userProfile?.role === 'ADMIN'">
+                <i class="fas fa-paper-plane"></i>
+                {{ showReapplyForm ? 'Resubmit Application' : 'Submit Application' }}
+              </button>
+              
+              <!-- Cancel button for reapply form -->
+              <button 
+                type="button" 
+                class="btn-cancel" 
+                *ngIf="showReapplyForm"
+                (click)="showReapplyForm = false"
+                [disabled]="isLoading"
+              >
+                <i class="fas fa-times"></i>
+                Cancel
+              </button>
+              
+              <!-- Admin restriction message -->
+              <div *ngIf="userProfile?.role === 'ADMIN'" style="background: #fff3cd; padding: 10px; border-radius: 5px; border: 1px solid #ffeaa7; margin-top: 10px; text-align: center;">
+                <i class="fas fa-info-circle" style="color: #856404; margin-right: 5px;"></i>
+                <span style="color: #856404;">Driver applications are not available for admin users.</span>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+                      <!-- Account Management Section -->
+         <div class="profile-section account-management scroll-animate" #accountManagementSection *ngIf="true">
+          
+        
+        
+        <h2 class="section-title">Account Management</h2>
+        <div class="account-actions">
+          <div class="action-card">
+            <div class="action-icon">
+              <i class="fas fa-pause-circle"></i>
+            </div>
+            <div class="action-content">
+                             <h3>Deactivate Account</h3>
+                 <p *ngIf="userProfile?.role !== 'ADMIN'">Temporarily disable your account. Reactivate via support.</p>
+                 <p *ngIf="userProfile?.role === 'ADMIN'" style="color: #6c757d; font-style: italic;">Account management actions are not available for admin users.</p>
+                             <button class="btn-deactivate" (click)="deactivateAccount()" [disabled]="isLoading || userProfile?.role === 'ADMIN'">
+                <i class="fas fa-pause"></i>
+                Deactivate Account
+              </button>
+            </div>
+          </div>
+          
+          <div class="action-card">
+            <div class="action-icon danger">
+              <i class="fas fa-trash-alt"></i>
+            </div>
+            <div class="action-content">
+                             <h3>Delete Account</h3>
+                 <p *ngIf="userProfile?.role !== 'ADMIN'">Permanently delete your account. This cannot be undone.</p>
+                 <p *ngIf="userProfile?.role === 'ADMIN'" style="color: #6c757d; font-style: italic;">Account management actions are not available for admin users.</p>
+                             <button class="btn-delete" (click)="deleteAccount()" [disabled]="isLoading || userProfile?.role === 'ADMIN'">
+                <i class="fas fa-trash"></i>
+                Delete Account
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal-overlay" *ngIf="showDeleteConfirmation">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Delete Account</h3>
+      <button class="modal-close" (click)="cancelAction()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="warning-icon">
+        <i class="fas fa-exclamation-triangle"></i>
+      </div>
+      <p>Are you sure you want to permanently delete your account?</p>
+      <p class="warning-text">This cannot be undone.</p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" (click)="cancelAction()">Cancel</button>
+      <button class="btn-confirm-delete" (click)="confirmDelete()" [disabled]="isLoading">
+        <i class="fas fa-trash"></i>
+        Delete Account
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Deactivate Confirmation Modal -->
+<div class="modal-overlay" *ngIf="showDeactivateConfirmation">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Deactivate Account</h3>
+      <button class="modal-close" (click)="cancelAction()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="warning-icon">
+        <i class="fas fa-pause-circle"></i>
+      </div>
+      <p>Are you sure you want to deactivate your account?</p>
+      <!-- <p class="warning-text">You can reactivate later via support.</p> -->
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" (click)="cancelAction()">Cancel</button>
+      <button class="btn-confirm-deactivate" (click)="confirmDeactivate()" [disabled]="isLoading">
+        <i class="fas fa-pause"></i>
+        Deactivate Account
+      </button>
+    </div>
+  </div>
+</div>

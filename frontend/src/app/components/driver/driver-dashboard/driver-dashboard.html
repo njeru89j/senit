@@ -1,0 +1,115 @@
+<div class="driver-dashboard">
+  <!-- Shared Sidebar -->
+  <app-sidebar></app-sidebar>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Header -->
+    <div class="content-header">
+      <div class="header-left">
+        <h1 class="welcome-title">Welcome back, <span class="highlight">{{ currentUser?.name || 'Driver' }}!</span></h1>
+        <p class="welcome-subtitle">Here's your performance overview for today</p>
+      </div>
+    </div>
+
+    <!-- Performance Metrics -->
+    <div class="metrics-section">
+      <h2 class="section-title">Performance Metrics</h2>
+      <div class="metrics-grid" *ngIf="!isLoadingMetrics; else metricsLoading">
+        <div class="metric-card">
+          <div class="metric-header">
+            <h3>Average Rating</h3>
+            <i class="fas fa-star metric-icon"></i>
+          </div>
+          <div class="metric-value">{{ getFormattedRating() }}</div>
+          <div class="metric-change positive">
+            <i class="fas fa-arrow-up"></i>
+            <span>+{{ performanceMetrics.ratingChange }}%</span>
+          </div>
+        </div>
+        
+        <div class="metric-card">
+          <div class="metric-header">
+            <h3>Deliveries Completed</h3>
+            <i class="fas fa-check-circle metric-icon"></i>
+          </div>
+          <div class="metric-value">{{ getFormattedDeliveries() }}</div>
+          <div class="metric-change positive">
+            <i class="fas fa-arrow-up"></i>
+            <span>+{{ performanceMetrics.deliveriesChange }}%</span>
+          </div>
+        </div>
+        
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <h3>Total Assigned</h3>
+            <i class="fas fa-tasks metric-icon"></i>
+          </div>
+          <div class="metric-value">{{ performanceMetrics.totalDeliveries }}</div>
+          <div class="metric-subtitle">
+            <span>{{ performanceMetrics.pendingDeliveries }} pending</span>
+          </div>
+        </div>
+      </div>
+      
+      <ng-template #metricsLoading>
+        <div class="loading-container">
+          <div class="loading-spinner"></div>
+          <p>Loading performance metrics...</p>
+        </div>
+      </ng-template>
+    </div>
+
+
+
+    <!-- Today's Summary -->
+    <div class="summary-section" *ngIf="!isLoading" style="padding: 0 30px 30px 30px;">
+      <h2 class="section-title">Today's Summary</h2>
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="summary-icon">
+            <i class="fas fa-calendar-day"></i>
+          </div>
+          <div class="summary-content">
+            <h3>Today's Deliveries</h3>
+            <div class="summary-stats">
+              <div class="summary-stat">
+                <span class="stat-label">Assigned:</span>
+                <span class="stat-value">{{ performanceMetrics.totalDeliveries }}</span>
+              </div>
+              <div class="summary-stat">
+                <span class="stat-label">Pending:</span>
+                <span class="stat-value">{{ performanceMetrics.pendingDeliveries }}</span>
+              </div>
+              <div class="summary-stat">
+                <span class="stat-label">In Transit:</span>
+                <span class="stat-value">{{ performanceMetrics.inTransitDeliveries }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <div class="summary-icon">
+            <i class="fas fa-chart-line"></i>
+          </div>
+          <div class="summary-content">
+            <h3>Performance</h3>
+            <div class="summary-stats">
+              <div class="summary-stat">
+                <span class="stat-label">Rating:</span>
+                <span class="stat-value">{{ performanceMetrics.averageRating }}/5</span>
+              </div>
+
+              <div class="summary-stat">
+                <span class="stat-label">Completed:</span>
+                <span class="stat-value">{{ performanceMetrics.deliveriesCompleted }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>

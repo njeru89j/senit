@@ -1,0 +1,35 @@
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2353: Object literal may only specify known properties, and 'role' does not exist in type 'CreateUserDto'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/components/signup/signup.ts:28:4:
+[37m      28 │     [32mrole[37m: 'CUSTOMER' // Default role
+         ╵     [32m~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG2008: Could not find stylesheet file './operations.css'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/components/admin/operations/operations.ts:11:12:
+[37m      11 │   styleUrl: [32m'./operations.css'[37m,
+         ╵             [32m~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG2008: Could not find stylesheet file './operations.css'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/components/admin/operations/operations.ts:11:12:
+[37m      11 │   styleUrl: [32m'./operations.css'[37m,
+         ╵             [32m~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG2008: Could not find stylesheet file './operations.css'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/components/admin/operations/operations.ts:11:12:
+[37m      11 │   styleUrl: [32m'./operations.css'[37m,
+         ╵             [32m~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG2008: Could not find stylesheet file './operations.css'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/components/admin/operations/operations.ts:11:12:
+[37m      11 │   styleUrl: [32m'./operations.css'[37m,
+         ╵             [32m~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

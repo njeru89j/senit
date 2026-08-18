@@ -1,0 +1,164 @@
+<div class="user-dashboard">
+  <!-- Shared Sidebar -->
+  <app-sidebar></app-sidebar>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Header Section -->
+    <div class="header-section">
+      <div class="welcome-message">
+        <h1>Welcome back, <span class="user-name">{{ userName }}!</span></h1>
+        <p class="info-text" *ngIf="parcelsInTransit > 0 || scheduledForTomorrow > 0">
+          You have {{ parcelsInTransit }} parcels in transit and {{ scheduledForTomorrow }} scheduled for delivery tomorrow. 
+          Keep track of your shipments below.
+        </p>
+        <p class="info-text" *ngIf="parcelsInTransit === 0 && scheduledForTomorrow === 0">
+          Welcome to your dashboard! Check your parcel status below.
+        </p>
+      </div>
+      <div class="header-actions">
+        <button class="refresh-button" (click)="refreshDashboard()" [disabled]="isLoading">
+          <i class="fas fa-sync-alt" [class.fa-spin]="isLoading"></i>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    <div class="loading-container" *ngIf="isLoading">
+      <div class="loading-spinner"></div>
+      <p>Loading your dashboard data...</p>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div *ngIf="!isLoading">
+      <!-- Summary Cards -->
+      <div class="dashboard-section">
+        <div class="summary-cards">
+          <div class="summary-card" 
+               *ngFor="let card of summaryCards"
+               [class.total-spent-card]="card.isTotalSpent">
+            <div class="card-icon">
+              <i [class]="card.icon"></i>
+            </div>
+            <div class="card-content">
+              <h3 class="card-title">{{ card.title }}</h3>
+              <p class="card-value">{{ card.value }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+
+      <!-- Spending Summary Section -->
+      <div class="dashboard-section" *ngIf="getTotalSpent() > 0">
+        <h2 class="section-title">
+          <i class="fas fa-chart-line"></i>
+          Spending Summary
+        </h2>
+        <div class="spending-summary">
+          <div class="spending-card">
+            <div class="spending-icon">
+              <i class="fas fa-dollar-sign"></i>
+            </div>
+            <div class="spending-content">
+              <h3>Total Spent</h3>
+              <p class="spending-amount">ksh{{ getTotalSpent().toFixed(0) }}</p>
+              <p class="spending-details">Across {{ getParcelsWithFees().length }} deliveries</p>
+            </div>
+          </div>
+          <div class="spending-breakdown">
+            <div class="breakdown-item">
+              <span class="breakdown-label">Average per delivery:</span>
+              <span class="breakdown-value">ksh{{ getAverageSpent().toFixed(0) }}</span>
+            </div>
+            <div class="breakdown-item">
+              <span class="breakdown-label">This month:</span>
+              <span class="breakdown-value">ksh{{ getMonthlySpent().toFixed(0) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Parcels Section -->
+      <div class="dashboard-section">
+        <div class="parcels-header">
+          <h2 class="section-title">Your Parcels</h2>
+          <div class="tabs">
+            <button 
+              class="tab-button" 
+              [class.active]="activeTab === 'sent'"
+              (click)="switchTab('sent')"
+            >
+              <i class="fas fa-paper-plane"></i>
+              Sent ({{ sentParcels.length }})
+            </button>
+            <button 
+              class="tab-button" 
+              [class.active]="activeTab === 'received'"
+              (click)="switchTab('received')"
+            >
+              <i class="fas fa-inbox"></i>
+              Received ({{ receivedParcels.length }})
+            </button>
+          </div>
+        </div>
+
+        <!-- Parcels Table -->
+        <div class="parcels-table-container" *ngIf="getRecentParcels().length > 0">
+          <table class="parcels-table">
+            <thead>
+              <tr>
+                <th>Tracking Number</th>
+                <th>Weight</th>
+                <th>Status</th>
+                <th>Pickup Address</th>
+                <th>Delivery Address</th>
+                <th>Updated</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let parcel of getRecentParcels()">
+                <td class="parcel-id">
+                  <a [routerLink]="['/parcel-details', parcel.id]" class="tracking-link">
+                    {{ parcel.trackingNumber }}
+                  </a>
+                </td>
+                <td class="parcel-weight">{{ parcel.weight }}kg</td>
+                <td>
+                  <span class="status-badge" [ngClass]="getStatusClass(parcel.status)">
+                    {{ getStatusDisplayName(parcel.status) }}
+                  </span>
+                </td>
+                <td class="address">{{ parcel.pickupAddress }}</td>
+                <td class="address">{{ parcel.deliveryAddress }}</td>
+                <td class="delivery-date">{{ parcel.updatedAt | date:'shortDate' }}</td>
+                <td class="actions">
+                  <a [routerLink]="['/parcel-details', parcel.id]" class="view-btn">
+                    <i class="fas fa-eye"></i> View
+                  </a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Empty State for Parcels -->
+        <div class="empty-state" *ngIf="getRecentParcels().length === 0">
+          <i class="fas fa-box empty-icon"></i>
+          <p>No {{ activeTab }} parcels found</p>
+          <p class="empty-subtitle">
+            <span *ngIf="activeTab === 'sent'">
+              You haven't sent any parcels yet. Create your first delivery to get started!
+            </span>
+            <span *ngIf="activeTab === 'received'">
+              You haven't received any parcels yet. Parcels sent to you will appear here.
+            </span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div> 

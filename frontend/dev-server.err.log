@@ -1,0 +1,31 @@
+
+<--- Last few GCs --->
+
+[27332:000002B74D4E2000]    20604 ms: Scavenge 143.5 (162.9) -> 137.5 (171.9) MB, pooled: 0 MB, 43.44 / 0.06 ms  (average mu = 0.994, current mu = 0.992) allocation failure; 
+[27332:000002B74D4E2000]    21387 ms: Scavenge 153.2 (172.9) -> 140.5 (174.4) MB, pooled: 0 MB, 6.38 / 0.00 ms  (average mu = 0.994, current mu = 0.992) allocation failure; 
+
+
+<--- JS stacktrace --->
+
+FATAL ERROR: AlignedAlloc Allocation failed - process out of memory
+----- Native stack trace -----
+
+ 1: 00007FF6625B542D node::SetCppgcReference+17693
+ 2: 00007FF662518248 SSL_get_quiet_shutdown+102712
+ 3: 00007FF66309ED41 v8::Isolate::ReportExternalAllocationLimitReached+65
+ 4: 00007FF66308B9C6 v8::Function::Experimental_IsNopFunction+2870
+ 5: 00007FF662B5DA6F v8::internal::Version::GetString+11407
+ 6: 00007FF662C903CA v8::MemorySpan<std::basic_string_view<char,std::char_traits<char> > const >::end+54330
+ 7: 00007FF662C8FE2A v8::MemorySpan<std::basic_string_view<char,std::char_traits<char> > const >::end+52890
+ 8: 00007FF662C8DFF0 v8::MemorySpan<std::basic_string_view<char,std::char_traits<char> > const >::end+45152
+ 9: 00007FF662F06649 v8::Isolate::GetHeapProfiler+119017
+10: 00007FF663079B97 v8::SharedValueConveyor::SharedValueConveyor+503575
+11: 00007FF662C51997 v8::base::Thread::StartSynchronously+137495
+12: 00007FF662C65FB9 v8::base::Thread::StartSynchronously+220985
+13: 00007FF662C51260 v8::base::Thread::StartSynchronously+135648
+14: 00007FF663002CCD v8::SharedValueConveyor::SharedValueConveyor+16461
+15: 00007FF6630026FA v8::SharedValueConveyor::SharedValueConveyor+14970
+16: 00007FF662BCEAD7 v8::base::AddressSpaceReservation::AddressSpaceReservation+359127
+17: 00007FF66315A0CE v8::PropertyDescriptor::writable+725950
+18: 00007FF6630BC22F v8::PropertyDescriptor::writable+79135
+19: 00007FF60361985C 

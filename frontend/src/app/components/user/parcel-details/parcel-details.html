@@ -1,0 +1,503 @@
+<div class="parcel-details" *ngIf="parcel">
+  <!-- Shared Sidebar -->
+  <app-sidebar></app-sidebar>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Header -->
+    <div class="content-header">
+      <div class="header-left">
+        <h1>Parcel {{ parcel.id }}</h1>
+        <div class="parcel-status">
+          <span class="status-badge" [ngClass]="getStatusClass(parcel.status)">
+            {{ parcel.status }}
+          </span>
+        </div>
+      </div>
+      <button class="back-button" (click)="goBack()">
+        <i class="fas fa-arrow-left"></i>
+        Back to Parcels
+      </button>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div class="dashboard-content">
+      <!-- Main Content Grid -->
+      <div class="content-grid">
+        <!-- Left Column - Parcel Info & Map -->
+        <div class="left-column">
+          <!-- Parcel Information -->
+          <div class="parcel-info-section">
+            <h2 class="section-title">Parcel Information</h2>
+            <div class="info-grid">
+              <div class="info-item">
+                <label>Tracking Number</label>
+                <span>{{ parcel.trackingNumber }}</span>
+              </div>
+              <div class="info-item">
+                <label>Weight</label>
+                <span>{{ parcel.weight }} kg</span>
+              </div>
+              <div class="info-item">
+                <label>Pickup Date</label>
+                <span>{{ parcel.scheduledPickup }}</span>
+              </div>
+              <div class="info-item">
+                <label>Expected Delivery</label>
+                <span>{{ parcel.expectedDelivery }}</span>
+              </div>
+              <div class="info-item">
+                <label>Description</label>
+                <span>{{ parcel.description }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sender Information -->
+          <div class="sender-section">
+            <h2 class="section-title">Sender Information</h2>
+            <div class="contact-info">
+              <div class="info-item">
+                <label>Name</label>
+                <span>{{ parcel.senderName }}</span>
+              </div>
+              <div class="info-item">
+                <label>Address</label>
+                <span>{{ parcel.pickupAddress }}</span>
+              </div>
+              <div class="info-item">
+                <label>Contact Number</label>
+                <span>{{ parcel.senderPhone || 'Not provided' }}</span>
+              </div>
+              <div class="info-item">
+                <label>Email</label>
+                <span>{{ parcel.senderEmail || (parcel.senderName || 'sender').toLowerCase().replace(' ', '.') + '@email.com' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Receiver Information -->
+          <div class="receiver-section">
+            <h2 class="section-title">Receiver Information</h2>
+            <div class="contact-info">
+              <div class="info-item">
+                <label>Name</label>
+                <span>{{ parcel.receiverName }}</span>
+              </div>
+              <div class="info-item">
+                <label>Address</label>
+                <span>{{ parcel.deliveryAddress }}</span>
+              </div>
+              <div class="info-item">
+                <label>Contact Number</label>
+                <span>{{ parcel.receiverPhone || 'Not provided' }}</span>
+              </div>
+              <div class="info-item">
+                <label>Email</label>
+                <span>{{ parcel.receiverEmail || (parcel.receiverName || 'receiver').toLowerCase().replace(' ', '.') + '@email.com' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Driver Information -->
+          <div class="driver-section" *ngIf="parcel.driver">
+            <h2 class="section-title">Driver Information</h2>
+            <div class="contact-info">
+              <div class="info-item">
+                <label>Driver Name</label>
+                <span>{{ parcel.driver.name }}</span>
+              </div>
+              <div class="info-item">
+                <label>Vehicle Number</label>
+                <span>{{ parcel.driver.vehicleNumber }}</span>
+              </div>
+              <div class="info-item" *ngIf="parcel.driver?.phone">
+                <label>Contact Number</label>
+                <span>{{ parcel.driver.phone }}</span>
+              </div>
+              <div class="info-item">
+                <label>Status</label>
+                <span class="driver-status">
+                  <i class="fas fa-circle driver-active"></i>
+                  Active
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tracking Map Section -->
+          <div class="tracking-section">
+            <div class="map-header">
+              <h2 class="section-title">Parcel Location</h2>
+              <div class="map-controls">
+                <button class="btn-secondary" (click)="toggleMapView()">
+                  <i class="fas fa-eye"></i>
+                  {{ showMapView ? 'Hide Map' : 'Show Map' }}
+                </button>
+                <button class="btn-secondary" (click)="fitMapToMarkers()" *ngIf="showMapView">
+                  <i class="fas fa-expand-arrows-alt"></i>
+                  Fit to Route
+                </button>
+                <button class="btn-secondary" (click)="toggleDriverTracking()" *ngIf="showMapView && parcel.driver">
+                  <i class="fas fa-location-arrow"></i>
+                  {{ isDriverTrackingEnabled ? 'Disable' : 'Enable' }} Live Tracking
+                </button>
+              </div>
+            </div>
+            
+            <!-- Map View -->
+            <div class="map-container" *ngIf="showMapView">
+              <app-map
+                #mapComponent
+                [height]="'400px'"
+                [markers]="mapMarkers"
+                [markerTypes]="mapMarkerTypes"
+                [center]="mapCenter"
+                [showRoute]="mapMarkers.length >= 2"
+                [zoom]="mapMarkers.length > 1 ? 11 : 13"
+                [showControls]="true"
+                [showDriverTracking]="parcel.driver ? true : false"
+                [driverId]="parcel.driver?.id || ''"
+                (mapReady)="onMapReady($event)"
+                (markerClick)="onMarkerClick($event)"
+                (mapClick)="onMapClick($event)"
+                (mapErrorEvent)="onMapError($event)"
+                (routeUpdated)="onRouteUpdated($event)"
+                (driverLocationUpdate)="updateDriverLocationOnMap($event)">
+              </app-map>
+              
+              <!-- Map Legend -->
+              <div class="map-overlay">
+                <div class="map-legend">
+                  <div class="legend-item">
+                    <div class="legend-pin pickup"></div>
+                    <span>Pickup Location</span>
+                  </div>
+                  <div class="legend-item">
+                    <div class="legend-pin delivery"></div>
+                    <span>Delivery Location</span>
+                  </div>
+                  <div class="legend-item" *ngIf="parcel.status === 'In Transit'">
+                    <div class="legend-pin current"></div>
+                    <span>Current Location</span>
+                  </div>
+                  <div class="legend-item" *ngIf="parcel.driver">
+                    <div class="legend-pin driver"></div>
+                    <span>Driver Location</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tracking Info (when map is hidden) -->
+            <div class="tracking-info-section" *ngIf="!showMapView">
+              <div class="tracking-info">
+                <div class="tracking-header">
+                  <h3><i class="fas fa-route"></i> Route Information</h3>
+                </div>
+                
+                <!-- Route Details -->
+                <div class="route-details">
+                  <div class="route-point pickup">
+                    <div class="point-icon">
+                      <i class="fas fa-map-marker-alt"></i>
+                    </div>
+                    <div class="point-info">
+                      <h4>Pickup Location</h4>
+                      <p>{{ parcel.pickupAddress }}</p>
+                    </div>
+                  </div>
+                  
+                  <div class="route-line">
+                    <div class="line-segment"></div>
+                    <div class="route-stats">
+                      <span class="distance">{{ routeDistance || 'Calculating...' }} km</span>
+                      <span class="duration">{{ routeDuration || 'Calculating...' }}</span>
+                    </div>
+                  </div>
+                  
+                  <div class="route-point delivery">
+                    <div class="point-icon">
+                      <i class="fas fa-flag-checkered"></i>
+                    </div>
+                    <div class="point-info">
+                      <h4>Delivery Location</h4>
+                      <p>{{ parcel.deliveryAddress }}</p>
+                    </div>
+                  </div>
+                  
+                  <!-- Driver Location (when driver is assigned) -->
+                  <div class="route-point driver" *ngIf="parcel.driver">
+                    <div class="point-icon">
+                      <i class="fas fa-user"></i>
+                    </div>
+                    <div class="point-info">
+                      <h4>Driver Location</h4>
+                      <p>{{ parcel.driver.name }} - {{ parcel.driver.vehicleNumber }}</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Current Status -->
+                <div class="current-status">
+                  <h3><i class="fas fa-info-circle"></i> Current Status</h3>
+                  <div class="status-details">
+                    <div class="status-item">
+                      <label>Current Location:</label>
+                      <span>{{ parcel.currentLocation || 'Pending pickup' }}</span>
+                    </div>
+                    <div class="status-item">
+                      <label>Estimated Delivery:</label>
+                      <span>{{ parcel.estimatedTime }}</span>
+                    </div>
+                    <div class="status-item" *ngIf="parcel.driver">
+                      <label>Driver:</label>
+                      <span>{{ parcel.driver.name }} ({{ parcel.driver.vehicleNumber }})</span>
+                    </div>
+                    <div class="status-item" *ngIf="parcel.driver?.phone">
+                      <label>Driver Contact:</label>
+                      <span>{{ parcel.driver?.phone }}</span>
+                    </div>
+                    <div class="status-item" *ngIf="parcel.driver">
+                      <label>Driver Location:</label>
+                      <span>{{ parcel.driver.currentLat && parcel.driver.currentLng ? 'Live tracking available' : 'Location updating...' }}</span>
+                    </div>
+                    <div class="status-item" *ngIf="parcel.driver && isDriverTrackingEnabled">
+                      <label>Live Tracking:</label>
+                      <span class="live-tracking-indicator">
+                        <i class="fas fa-circle"></i>
+                        Active
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Progress Bar -->
+                <div class="delivery-progress">
+                  <h3><i class="fas fa-chart-line"></i> Delivery Progress</h3>
+                  <div class="progress-container">
+                    <div class="progress-bar">
+                      <div class="progress-fill" [style.width.%]="getDeliveryProgress()"></div>
+                    </div>
+                    <div class="progress-labels">
+                      <span>Order Placed</span>
+                      <span>In Transit</span>
+                      <span>Delivered</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Quick Actions -->
+                <div class="quick-actions">
+                  <button class="action-btn" (click)="toggleMapView()">
+                    <i class="fas fa-map"></i>
+                    Show Map
+                  </button>
+                  <button class="action-btn" (click)="refreshMapMarkers()">
+                    <i class="fas fa-sync-alt"></i>
+                    Refresh
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column - Timeline & Reviews -->
+        <div class="right-column">
+          <!-- Tracking Timeline -->
+          <div class="timeline-section">
+            <h2 class="section-title">Order History</h2>
+            <div class="tracking-summary" *ngIf="trackingOverview">
+              <p *ngIf="trackingOverview.route"><strong>Route:</strong> {{ trackingOverview.route.name }} — {{ trackingOverview.route.origin }} → {{ trackingOverview.route.destination }}</p>
+              <p *ngIf="trackingOverview.batch"><strong>Batch:</strong> {{ trackingOverview.batch.batchNumber }}</p>
+              <p *ngIf="trackingOverview.locker"><strong>Locker:</strong> collection is available for this parcel.</p><div *ngIf="trackingOverview.locker" class="quick-actions"><input [(ngModel)]="lockerCollectionCode" placeholder="Enter collection code" aria-label="Locker collection code"><button class="action-btn" (click)="collectFromLocker()" [disabled]="lockerRequestBusy || !lockerCollectionCode">{{lockerRequestBusy ? 'Collecting…' : 'Collect parcel from locker'}}</button></div>
+              <button class="action-btn" *ngIf="!trackingOverview.locker && parcel.originalStatus === 'at_destination'" (click)="requestLocker()" [disabled]="lockerRequestBusy">{{ lockerRequestBusy ? 'Sending request…' : 'Request a smart locker' }}</button>
+              <p *ngIf="trackingOverview.security?.alerts?.length"><strong>Security:</strong> {{ trackingOverview.security.alerts.length }} alert(s) recorded.</p>
+            </div>
+            <div class="timeline">
+              <div 
+                class="timeline-item" 
+                *ngFor="let event of trackingEvents; let i = index"
+                [ngClass]="getTrackingEventClass(event)"
+              >
+                <div class="timeline-icon">
+                  <i [class]="event.icon"></i>
+                </div>
+                <div class="timeline-content">
+                  <div class="timeline-header">
+                    <h3>{{ event.status }}</h3>
+                    <span class="timeline-time">{{ event.timestamp }}</span>
+                  </div>
+                  <p class="timeline-location">{{ event.location }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Review Section - Show for Completed Parcels or when user has marked as complete -->
+          <div class="review-section" *ngIf="shouldShowReviewSection()">
+            <!-- User's Review Display -->
+            <div class="user-review" *ngIf="hasUserReviewed && userReview">
+              <div class="user-review-header">
+                <h3>Your Review</h3>
+                <button 
+                  class="edit-review-btn" 
+                  (click)="openEditReviewModal()"
+                >
+                  <i class="fas fa-edit"></i>
+                  Edit Review
+                </button>
+              </div>
+              <div class="review-item">
+                <div class="review-header">
+                  <div class="reviewer-info">
+                    <span class="reviewer-name">{{ userReview.userName }}</span>
+                    <span class="review-date">{{ userReview.date }}</span>
+                  </div>
+                  <div class="review-rating">
+                    <i 
+                      *ngFor="let star of [1,2,3,4,5]; let i = index"
+                      [class]="getStarClass(userReview.rating, i + 1)"
+                      class="star"
+                    ></i>
+                  </div>
+                </div>
+                <p class="review-comment">{{ userReview.comment }}</p>
+              </div>
+            </div>
+
+            <!-- Simple Review Button -->
+            <div class="review-action" *ngIf="!hasUserReviewed">
+              <button 
+                class="btn-primary review-btn" 
+                (click)="openReviewModal()"
+              >
+                <i class="fas fa-star"></i>
+                Write Review
+              </button>
+            </div>
+          </div>
+
+          <!-- Completion Section - Show for all statuses but disable button when not ready -->
+          <div class="completion-section">
+            <div class="completion-header">
+              <h2 class="section-title">
+                <i class="fas" [class.fa-check-double]="canMarkAsComplete()" [class.fa-clock]="!canMarkAsComplete()"></i>
+                {{ canMarkAsComplete() ? 'Complete Delivery' : 'Delivery Status' }}
+              </h2>
+              <p class="completion-description" [class.completion-description-disabled]="!canMarkAsComplete()" *ngIf="canMarkAsComplete()">
+                Confirm receipt to complete delivery
+              </p>
+              <p class="completion-description completion-description-disabled" *ngIf="!canMarkAsComplete() && isRecipient">
+                Available once parcel is delivered
+              </p>
+              <p class="completion-description completion-description-disabled" *ngIf="!canMarkAsComplete() && isSender">
+                Only recipient can confirm delivery
+              </p>
+              <p class="completion-description completion-description-disabled" *ngIf="!canMarkAsComplete() && !isRecipient && !isSender">
+                Available once parcel is delivered
+              </p>
+            </div>
+            <div class="completion-actions">
+              <button 
+                class="btn-primary completion-btn" 
+                (click)="markAsComplete()"
+                [disabled]="!canMarkAsComplete() || isMarkingAsComplete"
+              >
+                <i class="fas" [class.fa-check-double]="!isMarkingAsComplete" [class.fa-spinner]="isMarkingAsComplete"></i>
+                <span>{{ isMarkingAsComplete ? 'Marking as Complete...' : 'Mark as Complete' }}</span>
+              </button>
+              <p class="completion-note" *ngIf="canMarkAsComplete()">
+                Once you mark as complete, you'll be able to leave a review for this delivery.
+              </p>
+              <p class="completion-note completion-note-disabled" *ngIf="!canMarkAsComplete() && isRecipient">
+                <i class="fas fa-info-circle"></i>
+                This parcel is not yet ready to be marked as complete. Please wait until it has been delivered to you.
+              </p>
+              <p class="completion-note completion-note-disabled" *ngIf="!canMarkAsComplete() && isSender">
+                <i class="fas fa-info-circle"></i>
+                As the sender, you cannot mark this parcel as complete. Only the recipient can confirm delivery.
+              </p>
+              <p class="completion-note completion-note-disabled" *ngIf="!canMarkAsComplete() && !isRecipient && !isSender">
+                <i class="fas fa-info-circle"></i>
+                This parcel is not yet ready to be marked as complete. Please wait until it has been delivered to you.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Review Modal -->
+<div class="modal-overlay" *ngIf="showReviewModal" (click)="closeReviewModal()">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h2>{{ isEditingReview ? 'Edit Review' : 'Write a Review' }}</h2>
+      <button class="modal-close" (click)="closeReviewModal()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="modal-body">
+      <div class="rating-section">
+        <label class="rating-label">Rate your experience:</label>
+        <div class="stars-container">
+          <i 
+            *ngFor="let star of [1,2,3,4,5]; let i = index"
+            [class]="getStarClass(reviewRating, i + 1)"
+            (click)="reviewRating = i + 1"
+            class="modal-star"
+          ></i>
+        </div>
+        <span class="rating-text">{{ reviewRating }} out of 5 stars</span>
+      </div>
+      
+      <div class="comment-section">
+        <label class="comment-label" for="modal-review-comment">Share your experience:</label>
+        <textarea 
+          id="modal-review-comment"
+          [(ngModel)]="reviewComment"
+          placeholder="Tell us about your delivery experience..."
+          rows="5"
+          class="modal-textarea"
+        ></textarea>
+      </div>
+    </div>
+    
+    <div class="modal-footer">
+      <div class="modal-footer-left">
+        <button 
+          class="modal-btn modal-btn-danger" 
+          (click)="deleteReview()"
+          *ngIf="isEditingReview"
+        >
+          <i class="fas fa-trash"></i>
+          Delete Review
+        </button>
+      </div>
+      <div class="modal-footer-right">
+        <button class="modal-btn modal-btn-secondary" (click)="closeReviewModal()">
+          Cancel
+        </button>
+        <button 
+          class="modal-btn modal-btn-primary" 
+          (click)="isEditingReview ? updateReview() : submitReview()"
+          [disabled]="!reviewRating || !reviewComment.trim()"
+        >
+          {{ isEditingReview ? 'Update Review' : 'Submit Review' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Loading State -->
+<div class="loading-state" *ngIf="!parcel">
+  <div class="loading-spinner">
+    <i class="fas fa-spinner fa-spin"></i>
+    <p>Loading parcel details...</p>
+  </div>
+</div> 

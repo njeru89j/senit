@@ -1,0 +1,133 @@
+<nav class="home-navbar">
+  <div class="home-navbar-container">
+    <!-- Logo -->
+    <div class="home-logo" (click)="scrollToTop()">
+      <img src="/images/1logo-removebg-preview.png" alt="SendIT Logo" class="home-logo-image">
+      
+    </div>
+    
+    <!-- Navigation Links -->
+    <div class="home-nav-links">
+      <a (click)="scrollToSection('about')" class="home-nav-link">About</a>
+      <a (click)="scrollToSection('services')" class="home-nav-link">Services</a>
+      <a (click)="scrollToSection('features')" class="home-nav-link">Features</a>
+      <a (click)="scrollToSection('process')" class="home-nav-link">How It Works</a>
+      <a (click)="scrollToSection('partnerships')" class="home-nav-link">Partners</a>
+    </div>
+    
+    <!-- Action Buttons - show only when not authenticated -->
+    <div class="home-nav-actions" *ngIf="!isAuthenticated">
+      <button class="home-login-btn" routerLink="/login">Login</button>
+      <button class="home-signup-btn" routerLink="/signup">Sign Up</button>
+    </div>
+    
+    <!-- User menu - show when authenticated -->
+    <div class="home-nav-actions" *ngIf="isAuthenticated">
+      <!-- User avatar with dropdown menu -->
+      <div class="user-menu-container">
+        <div class="user-avatar" (click)="toggleUserMenu($event)">
+          <img 
+            *ngIf="currentUser?.profilePicture" 
+            [src]="currentUser.profilePicture" 
+            [alt]="currentUser?.name + ' profile picture'"
+            class="user-profile-picture"
+            (error)="onProfilePictureError($event)"
+          >
+          <span class="user-initials" *ngIf="!currentUser?.profilePicture || profilePictureError">{{ getUserInitials() }}</span>
+        </div>
+        
+        <!-- User dropdown menu -->
+        <div class="user-dropdown" *ngIf="showUserMenu">
+          <div class="user-info">
+            <div class="user-profile-section">
+              <div class="user-profile-picture-container">
+                <img 
+                  *ngIf="currentUser?.profilePicture && !profilePictureError" 
+                  [src]="currentUser.profilePicture" 
+                  [alt]="currentUser?.name + ' profile picture'"
+                  class="dropdown-profile-picture"
+                  (error)="onProfilePictureError($event)"
+                >
+                <span class="dropdown-user-initials" *ngIf="!currentUser?.profilePicture || profilePictureError">{{ getUserInitials() }}</span>
+              </div>
+              <div class="user-details">
+                <div class="welcome-message">Welcome back,</div>
+                <div class="user-name">{{ currentUser?.name || 'User' }}</div>
+                <div class="user-role">{{ getUserRole() }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item" routerLink="/profile" (click)="showUserMenu = false">
+            <i class="fas fa-user"></i>
+            <span>Profile</span>
+          </button>
+          <button class="dropdown-item" (click)="logout()">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Logout</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Mobile Menu Toggle -->
+    <div class="mobile-menu-toggle" (click)="toggleMobileMenu()">
+      <i class="fas fa-bars" [class.fa-times]="isMobileMenuOpen"></i>
+    </div>
+  </div>
+</nav>
+
+<!-- Mobile Menu Overlay -->
+<div class="mobile-menu-overlay" *ngIf="isMobileMenuOpen" (click)="closeMobileMenu()"></div>
+
+<!-- Mobile Menu Sidebar -->
+<div class="mobile-menu-sidebar" [class.open]="isMobileMenuOpen">
+  <div class="mobile-menu-header">
+    <h3>Menu</h3>
+    <button class="mobile-menu-close" (click)="closeMobileMenu()">
+      <i class="fas fa-times"></i>
+    </button>
+  </div>
+  
+  <div class="mobile-menu-content">
+    <div class="mobile-nav-links">
+      <a (click)="scrollToSection('about'); closeMobileMenu()" class="mobile-nav-link">About</a>
+      <a (click)="scrollToSection('services'); closeMobileMenu()" class="mobile-nav-link">Services</a>
+      <a (click)="scrollToSection('features'); closeMobileMenu()" class="mobile-nav-link">Features</a>
+      <a (click)="scrollToSection('process'); closeMobileMenu()" class="mobile-nav-link">How It Works</a>
+      <a (click)="scrollToSection('partnerships'); closeMobileMenu()" class="mobile-nav-link">Partners</a>
+    </div>
+    
+    <div class="mobile-menu-actions" *ngIf="!isAuthenticated">
+      <button class="mobile-login-btn" routerLink="/login" (click)="closeMobileMenu()">Login</button>
+      <button class="mobile-signup-btn" routerLink="/signup" (click)="closeMobileMenu()">Sign Up</button>
+    </div>
+    
+    <div class="mobile-menu-actions" *ngIf="isAuthenticated">
+      <div class="mobile-user-info">
+        <div class="mobile-user-avatar">
+          <img 
+            *ngIf="currentUser?.profilePicture && !profilePictureError" 
+            [src]="currentUser.profilePicture" 
+            [alt]="currentUser?.name + ' profile picture'"
+            class="mobile-user-profile-picture"
+            (error)="onProfilePictureError($event)"
+          >
+          <span class="mobile-user-initials" *ngIf="!currentUser?.profilePicture || profilePictureError">{{ getUserInitials() }}</span>
+        </div>
+        <div class="mobile-user-details">
+          <div class="mobile-user-name">{{ currentUser?.name || 'User' }}</div>
+          <div class="mobile-user-role">{{ getUserRole() }}</div>
+        </div>
+      </div>
+      <button class="mobile-profile-btn" routerLink="/profile" (click)="closeMobileMenu()">
+        <i class="fas fa-user"></i>
+        Profile
+      </button>
+      <button class="mobile-logout-btn" (click)="logout(); closeMobileMenu()">
+        <i class="fas fa-sign-out-alt"></i>
+        Logout
+      </button>
+    </div>
+  </div>
+</div> 

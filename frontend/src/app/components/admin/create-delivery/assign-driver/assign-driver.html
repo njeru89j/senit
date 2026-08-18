@@ -1,0 +1,247 @@
+<div class="assign-driver">
+  <!-- Shared Sidebar -->
+  <app-sidebar></app-sidebar>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <div class="assign-driver-header">
+      <div class="header-content">
+        <button class="back-btn" (click)="goBack()">
+          <i class="fas fa-arrow-left"></i>
+          Back to Parcels
+        </button>
+        <h1 class="page-title">{{ isReassignment ? 'Reassign Driver' : 'Assign Parcel to Driver' }}</h1>
+      </div>
+    </div>
+
+    <div class="assign-driver-content">
+      <!-- Parcel Details Section -->
+      <div class="parcel-details-section">
+        <h2 class="section-title">Parcel Details</h2>
+        <div class="parcel-info" *ngIf="parcelDetails">
+          <div class="parcel-row">
+            <span class="parcel-label">Parcel ID:</span>
+            <span class="parcel-value">#{{ parcelDetails.id }}</span>
+          </div>
+          <div class="parcel-row" *ngIf="parcelDetails.trackingNumber">
+            <span class="parcel-label">Tracking Number:</span>
+            <span class="parcel-value">{{ parcelDetails.trackingNumber }}</span>
+          </div>
+          <div class="parcel-row" *ngIf="parcelDetails.senderName">
+            <span class="parcel-label">Sender:</span>
+            <span class="parcel-value">{{ parcelDetails.senderName }}</span>
+          </div>
+          <div class="parcel-row" *ngIf="parcelDetails.recipientName">
+            <span class="parcel-label">Recipient:</span>
+            <span class="parcel-value">{{ parcelDetails.recipientName }}</span>
+          </div>
+          <div class="parcel-row">
+            <span class="parcel-label">Pickup Address:</span>
+            <span class="parcel-value">{{ parcelDetails.pickupAddress }}</span>
+          </div>
+          <div class="parcel-row">
+            <span class="parcel-label">Delivery Address:</span>
+            <span class="parcel-value">{{ parcelDetails.deliveryAddress }}</span>
+          </div>
+          <div class="parcel-row">
+            <span class="parcel-label">Weight:</span>
+            <span class="parcel-value">{{ parcelDetails.weight }} kg</span>
+          </div>
+          <div class="parcel-row">
+            <span class="parcel-label">Price:</span>
+            <span class="parcel-value">KSH {{ parcelDetails.price.toFixed(2) }}</span>
+          </div>
+          <div class="parcel-row" *ngIf="parcelDetails.estimatedDistance">
+            <span class="parcel-label">Distance:</span>
+            <span class="parcel-value">{{ parcelDetails.estimatedDistance }} km</span>
+          </div>
+          <div class="parcel-row" *ngIf="parcelDetails.estimatedDeliveryTime">
+            <span class="parcel-label">Est. Time:</span>
+            <span class="parcel-value">{{ parcelDetails.estimatedDeliveryTime }} min</span>
+          </div>
+        </div>
+        <div class="parcel-info" *ngIf="!parcelDetails">
+          <p class="no-parcel">No parcel details available</p>
+        </div>
+      </div>
+
+      <!-- Available Drivers Section -->
+      <div class="drivers-section">
+        <h2 class="section-title">{{ isReassignment ? 'Select New Driver' : 'Available Drivers' }}</h2>
+        
+        <!-- Filter Options -->
+        <div class="filter-options" [formGroup]="assignForm">
+          <div class="filter-group">
+            <label for="vehicleType">Vehicle Type</label>
+            <select id="vehicleType" formControlName="vehicleType" class="filter-select">
+              <option *ngFor="let type of vehicleTypes" [value]="type">{{ type }}</option>
+            </select>
+          </div>
+          
+          <div class="filter-group">
+            <label for="rating">Ratings</label>
+            <select id="rating" formControlName="rating" class="filter-select">
+              <option *ngFor="let rating of ratingOptions" [value]="rating">{{ rating }}</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Drivers List -->
+        <div class="drivers-list">
+          <div class="loading-drivers" *ngIf="isLoading">
+            <div class="loading-spinner">
+              <i class="fas fa-spinner fa-spin"></i>
+              <p>Loading available drivers...</p>
+            </div>
+          </div>
+          
+          <div 
+            *ngFor="let driver of paginatedDrivers; let i = index" 
+            class="driver-item"
+            [class.selected]="driver.isSelected"
+            (click)="selectDriver(driver)"
+            [attr.data-driver-index]="i"
+          >
+            <div class="driver-radio">
+              <input 
+                type="radio" 
+                [id]="'driver-' + driver.id"
+                [name]="'driver-selection'"
+                [checked]="driver.isSelected"
+                (click)="selectDriver(driver)"
+              >
+              <label [for]="'driver-' + driver.id"></label>
+            </div>
+            
+            <div class="driver-info">
+              <div class="driver-name">{{ driver.name }}</div>
+              <div class="driver-details">
+                <span class="driver-rating">{{ (driver.averageRating || 0).toFixed(1) }} ★ ({{ driver.totalRatings || 0 }})</span>
+                <span class="driver-deliveries">{{ driver.completedDeliveries || 0 }} Deliveries</span>
+                <span class="driver-vehicle">{{ driver.vehicleType || 'N/A' }}</span>
+              </div>
+              <div class="driver-extra-info">
+                <span class="driver-phone">{{ driver.phone || 'N/A' }}</span>
+                <span class="driver-vehicle-number">{{ driver.vehicleNumber || 'N/A' }}</span>
+                <span class="driver-on-time" *ngIf="(driver.onTimeDeliveryRate || 0) > 0">
+                  {{ ((driver.onTimeDeliveryRate || 0) * 100).toFixed(0) }}% On Time
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="no-drivers" *ngIf="!isLoading && filteredDrivers.length === 0">
+            <p>No drivers match the selected filters</p>
+          </div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="pagination-container" *ngIf="!isLoading && totalDrivers > 0">
+          <div class="pagination-info">
+            <span>Showing {{ (currentPage - 1) * itemsPerPage + 1 }} to {{ endIndex }} of {{ totalDrivers }} drivers</span>
+          </div>
+          <div class="pagination-controls">
+            <button 
+              class="pagination-btn" 
+              [disabled]="currentPage === 1"
+              (click)="goToPreviousPage()"
+            >
+              <i class="fas fa-chevron-left"></i>
+              Previous
+            </button>
+            
+            <div class="page-numbers">
+              <button 
+                *ngFor="let page of pageNumbers"
+                class="page-number"
+                [class.active]="page === currentPage"
+                (click)="goToPage(page)"
+              >
+                {{ page }}
+              </button>
+            </div>
+            
+            <button 
+              class="pagination-btn" 
+              [disabled]="currentPage === totalPages"
+              (click)="goToNextPage()"
+            >
+              Next
+              <i class="fas fa-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map Section -->
+      <div class="map-section">
+        <div class="map-container">
+          <div class="map-header">
+            <h3 class="map-title">Route & Driver Locations</h3>
+            <div class="map-controls">
+              <button class="btn-secondary" (click)="fitMapToMarkers()">
+                <i class="fas fa-expand-arrows-alt"></i>
+                Fit to Route
+              </button>
+              <button class="btn-secondary" (click)="refreshMap()">
+                <i class="fas fa-redo"></i>
+                Refresh Map
+              </button>
+            </div>
+            <div class="map-legend">
+              <div class="legend-item">
+                <div class="legend-marker pickup-marker"></div>
+                <span>Pickup Location</span>
+              </div>
+              <div class="legend-item">
+                <div class="legend-marker delivery-marker"></div>
+                <span>Delivery Location</span>
+              </div>
+              <div class="legend-item">
+                <div class="legend-marker driver-marker"></div>
+                <span>Available Drivers</span>
+              </div>
+            </div>
+          </div>
+          <div class="tracking-map">
+            <!-- Map will be loaded here dynamically -->
+            <div id="assign-driver-map" class="tracking-map-placeholder">
+              <div class="map-loading" *ngIf="mapLoading">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading map...</p>
+              </div>
+              <div class="map-error" *ngIf="mapError">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Failed to load map</p>
+                <button class="btn-retry" (click)="initializeMap()">
+                  <i class="fas fa-redo"></i>
+                  Retry
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Assign Driver Button -->
+      <div class="assign-actions">
+        <button 
+          type="button" 
+          class="assign-btn"
+          [disabled]="!selectedDriver || !parcelDetails || isLoading"
+          (click)="assignDriver()"
+        >
+          <i class="fas fa-spinner fa-spin" *ngIf="isLoading"></i>
+          <span *ngIf="!isLoading">{{ isReassignment ? 'Reassign Driver' : 'Assign Driver' }}</span>
+          <span *ngIf="isLoading">{{ isReassignment ? 'Reassigning...' : 'Assigning...' }}</span>
+        </button>
+        
+        <!-- Warning message when parcel details are not available -->
+        <div *ngIf="!parcelDetails" class="warning-message">
+          <i class="fas fa-exclamation-triangle"></i>
+          <p>No parcel details available. Please create a delivery first or go back to parcel details.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div> 
