@@ -25,7 +25,7 @@ const disabledTransport = {
       transport: emailEnabled ? {
         host: process.env.MAIL_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.MAIL_PORT || '587'),
-        secure: process.env.MAIL_SECURE === 'true', // true for 465, false for other ports
+        secure: process.env.MAIL_SECURE === 'true' || process.env.MAIL_PORT === '465',
         auth: {
           user: process.env.MAIL_USER || '',
           pass: process.env.MAIL_PASSWORD || '',
@@ -34,9 +34,8 @@ const disabledTransport = {
         connectionTimeout: 60000, // 60 seconds
         greetingTimeout: 30000, // 30 seconds
         socketTimeout: 60000, // 60 seconds
-        // Add TLS settings for better compatibility
         tls: {
-          rejectUnauthorized: false,
+          rejectUnauthorized: true,
         },
       } : (disabledTransport as never),
       defaults: {

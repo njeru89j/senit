@@ -7,6 +7,7 @@ import { AuthService } from '../../../services/auth.service';
 import { AdminService, DashboardStats, SystemStats, Driver, Review, AnalyticsData } from '../../../services/admin.service';
 import { ToastService } from '../../shared/toast/toast.service';
 import { SidebarComponent } from '../../shared/sidebar/sidebar';
+import { OperationsService } from '../../../services/operations.service';
 
 @Component({
   selector: 'app-admin-dashboard',
@@ -24,7 +25,8 @@ export class AdminDashboard implements OnInit, OnDestroy {
     private router: Router,
     private authService: AuthService,
     private adminService: AdminService,
-    private toastService: ToastService
+    private toastService: ToastService,
+    private operationsService: OperationsService
   ) {}
 
   userRole: string = '';
@@ -203,13 +205,8 @@ export class AdminDashboard implements OnInit, OnDestroy {
     this.currentUser = this.authService.getCurrentUser();
     this.userRole = this.currentUser?.role || '';
 
-    if (this.userRole === 'TRANSIT_OFFICER') {
-      this.router.navigate(['/transit-officer/dashboard']);
-      return;
-    }
-    
     // Check if user is authenticated and has dashboard access
-    if (!this.authService.isAuthenticated() || !this.authService.hasAnyRole(['ADMIN'])) {
+    if (!this.authService.isAuthenticated() || !this.authService.hasAnyRole(['ADMIN', 'TRANSIT_OFFICER'])) {
       console.warn('Unauthorized access attempt to admin dashboard');
       this.router.navigate(['/login']);
       return;
@@ -459,6 +456,13 @@ export class AdminDashboard implements OnInit, OnDestroy {
   }
 
   private loadTopDriversFromAPI(): void {
+    if (this.userRole === 'TRANSIT_OFFICER') {
+      this.operationsService.officerDrivers().subscribe({
+        next: drivers => this.topDrivers = [...drivers].sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0)).slice(0, 3),
+        error: () => this.topDrivers = [],
+      });
+      return;
+    }
     // Use only supported parameters from DriverFilterDto
     this.adminService.getDrivers({ limit: 3 }).subscribe({
       next: (response: { drivers: Driver[]; total: number }) => {
@@ -563,6 +567,7 @@ export class AdminDashboard implements OnInit, OnDestroy {
   }
 
   viewDriverProfile(driverId: string): void {
+    if (this.userRole === 'TRANSIT_OFFICER') return;
     this.router.navigate(['/admin', 'user-details', driverId]);
   }
 

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomBytes, randomInt } from 'crypto';
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import * as bcrypt from 'bcrypt';
+import * as QRCode from 'qrcode';
 import {
   AlertStatus,
   Batch,
@@ -13,19 +14,70 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { forecastWeeklyVolume } from '../common/forecast';
+import { MailerService } from '../mailer/mailer.service';
 
 @Injectable()
 export class OperationsService {
   private readonly lockerAttempts = new Map<string, { count: number; lockedUntil?: Date }>();
-  constructor(private readonly prisma: PrismaService, private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+    private readonly mailer: MailerService,
+  ) {}
+
+  private async sendCollectionEmail(parcel: { id: string; trackingNumber: string; recipientName: string; recipientEmail: string }, details: { location: string; deadline: Date; locker?: string; collectionCode?: string }) {
+    try {
+      await this.mailer.sendGenericEmail({
+        to: parcel.recipientEmail,
+        subject: details.collectionCode
+          ? `Parcel ${parcel.trackingNumber} is in your locker`
+          : `Parcel ${parcel.trackingNumber} is ready for collection`,
+        template: 'parcel-ready-for-collection',
+        context: {
+          name: parcel.recipientName,
+          parcelId: parcel.id,
+          trackingNumber: parcel.trackingNumber,
+          location: details.location,
+          deadline: details.deadline.toLocaleString('en-KE', { timeZone: 'Africa/Nairobi' }),
+          locker: details.locker,
+          collectionCode: details.collectionCode,
+        },
+      });
+    } catch {
+      // Collection processing must remain successful when SMTP is temporarily unavailable.
+    }
+  }
 
   private audit(userId: string | undefined, action: string, entityType: string, entityId?: string, after?: object) {
     return this.prisma.auditLog.create({ data: { userId, action, entityType, entityId, after } });
   }
 
+  private async assignedPointIds(officerId: string): Promise<string[]> {
+    const assignments = await this.prisma.transitPointOfficer.findMany({ where: { officerId }, select: { transitPointId: true } });
+    if (assignments.length) return assignments.map((item) => item.transitPointId);
+    const legacy = await this.prisma.transitPoint.findMany({ where: { officerId }, select: { id: true } });
+    return legacy.map((point) => point.id);
+  }
+
+  private async assertOfficerStationAccess(stationId: string, userId: string, role?: UserRole): Promise<void> {
+    if (role !== UserRole.TRANSIT_OFFICER) return;
+    const station = await this.prisma.lockerStation.findUnique({ where: { id: stationId }, select: { transitPointId: true } });
+    const pointIds = await this.assignedPointIds(userId);
+    if (!station?.transitPointId || !pointIds.includes(station.transitPointId)) throw new NotFoundException('Locker not found at your assigned transit point');
+  }
+
+  private samePlace(left?: string | null, right?: string | null) {
+    const normalize = (value?: string | null) => (value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const a = normalize(left);
+    const b = normalize(right);
+    return !!a && !!b && (a === b || a.includes(b) || b.includes(a));
+  }
+
   private async officerRouteIds(user?: { id: string; role: UserRole }): Promise<string[] | undefined> {
     if (!user || user.role !== UserRole.TRANSIT_OFFICER) return undefined;
-    const points = await this.prisma.transitPoint.findMany({ where: { officerId: user.id, active: true }, select: { routeId: true } });
+    const pointIds = await this.assignedPointIds(user.id);
+    const points = await this.prisma.transitPoint.findMany({ where: { id: { in: pointIds }, active: true }, select: { routeId: true } });
     return [...new Set(points.map((point) => point.routeId).filter((id): id is string => !!id))];
   }
 
@@ -47,8 +99,9 @@ export class OperationsService {
     const allowedRouteIds = await this.officerRouteIds(user);
     const routes = await this.prisma.route.findMany({ where: allowedRouteIds ? { id: { in: allowedRouteIds } } : undefined, orderBy: { name: 'asc' } });
     const memberships = await this.prisma.routeTransitPoint.findMany({ orderBy: [{ routeId: 'asc' }, { sequence: 'asc' }] });
+    const membershipPointIds = memberships.filter((item) => routes.some((route) => route.id === item.routeId)).map((item) => item.transitPointId);
     const points = await this.prisma.transitPoint.findMany({
-      where: { routeId: { in: routes.map((route) => route.id) } },
+      where: { OR: [{ id: { in: membershipPointIds } }, { routeId: { in: routes.map((route) => route.id) } }] },
       orderBy: { createdAt: 'asc' },
     });
     const byId = new Map(points.map((point) => [point.id, point]));
@@ -83,16 +136,19 @@ export class OperationsService {
     return updated;
   }
 
-  async createTransitPoint(data: { name: string; latitude?: number; longitude?: number; contact?: string; routeId?: string; officerId?: string }, userId?: string) {
+  async createTransitPoint(data: { name: string; latitude?: number; longitude?: number; contact?: string; routeId?: string; officerId?: string; officerIds?: string[] }, userId?: string) {
     if (!data.routeId) throw new BadRequestException('A route is required for the transit point');
     const route = await this.prisma.route.findFirst({ where: { id: data.routeId, active: true } });
     if (!route) throw new NotFoundException('Active route not found');
-    if (data.officerId) {
-      const officer = await this.prisma.user.findFirst({ where: { id: data.officerId, role: UserRole.TRANSIT_OFFICER, isActive: true, deletedAt: null } });
-      if (!officer) throw new NotFoundException('Active transit officer not found');
-    }
+    const officerIds = [...new Set([...(data.officerIds ?? []), ...(data.officerId ? [data.officerId] : [])])];
+    if (!officerIds.length) throw new BadRequestException('Nominate at least one transit officer');
+    const officers = await this.prisma.user.findMany({ where: { id: { in: officerIds }, role: UserRole.TRANSIT_OFFICER, isActive: true, deletedAt: null } });
+    if (officers.length !== officerIds.length) throw new NotFoundException('One or more active transit officers were not found');
+    const alreadyAssigned = await this.prisma.transitPointOfficer.findFirst({ where: { officerId: { in: officerIds } } });
+    if (alreadyAssigned) throw new BadRequestException('A transit officer can only be nominated to one transit point');
     const point = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.transitPoint.create({ data: { ...data, latitude: data.latitude ?? 0, longitude: data.longitude ?? 0 } });
+      const created = await tx.transitPoint.create({ data: { name: data.name, routeId: data.routeId, contact: data.contact, officerId: officerIds[0], latitude: data.latitude ?? 0, longitude: data.longitude ?? 0 } });
+      await tx.transitPointOfficer.createMany({ data: officerIds.map((officerId) => ({ transitPointId: created.id, officerId, nominatedBy: userId })) });
       const lastMembership = await tx.routeTransitPoint.findFirst({
         where: { routeId: data.routeId },
         orderBy: { sequence: 'desc' },
@@ -112,14 +168,16 @@ export class OperationsService {
   }
 
   async listTransitPointsDetailed(user?: { id: string; role: UserRole }) {
-    const points = await this.prisma.transitPoint.findMany({ where: user?.role === UserRole.TRANSIT_OFFICER ? { officerId: user.id, active: true } : undefined, orderBy: { name: 'asc' } });
+    const assignedIds = user?.role === UserRole.TRANSIT_OFFICER ? await this.assignedPointIds(user.id) : undefined;
+    const points = await this.prisma.transitPoint.findMany({ where: assignedIds ? { id: { in: assignedIds }, active: true } : undefined, orderBy: { name: 'asc' } });
     const routeIds = [...new Set(points.map((point) => point.routeId).filter(Boolean) as string[])];
-    const officerIds = [...new Set(points.map((point) => point.officerId).filter(Boolean) as string[])];
+    const assignments = await this.prisma.transitPointOfficer.findMany({ where: { transitPointId: { in: points.map((point) => point.id) } } });
+    const officerIds = [...new Set(assignments.map((item) => item.officerId))];
     const [routes, officers]: [any[], any[]] = await Promise.all([
       routeIds.length ? this.prisma.route.findMany({ where: { id: { in: routeIds } } }) : [],
       officerIds.length ? this.prisma.user.findMany({ where: { id: { in: officerIds } }, select: { id: true, name: true, email: true, phone: true } }) : [],
     ]);
-    return points.map((point) => ({ ...point, route: routes.find((route) => route.id === point.routeId) ?? null, officer: officers.find((officer) => officer.id === point.officerId) ?? null }));
+    return points.map((point) => ({ ...point, route: routes.find((route) => route.id === point.routeId) ?? null, officers: officers.filter((officer) => assignments.some((item) => item.transitPointId === point.id && item.officerId === officer.id)), officer: officers.find((officer) => officer.id === point.officerId) ?? null }));
   }
 
   async listOfficerCandidates() {
@@ -135,17 +193,28 @@ export class OperationsService {
     return { id: updated.id, name: updated.name, email: updated.email, phone: updated.phone, role: updated.role };
   }
 
-  async updateTransitPoint(id: string, data: { name?: string; latitude?: number; longitude?: number; contact?: string; active?: boolean; routeId?: string; officerId?: string }, userId: string) {
+  async updateTransitPoint(id: string, data: { name?: string; latitude?: number; longitude?: number; contact?: string; active?: boolean; routeId?: string; officerId?: string; officerIds?: string[] }, userId: string) {
     const existing = await this.prisma.transitPoint.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Transit point not found');
     this.validateCoordinates(data.latitude ?? existing.latitude, data.longitude ?? existing.longitude);
-    const updated = await this.prisma.transitPoint.update({ where: { id }, data: { ...data, name: data.name?.trim() } });
+    const { officerIds: requestedOfficerIds, ...pointData } = data;
+    if (requestedOfficerIds) {
+      if (!requestedOfficerIds.length) throw new BadRequestException('A transit point must have at least one nominated officer');
+      const conflict = await this.prisma.transitPointOfficer.findFirst({ where: { officerId: { in: requestedOfficerIds }, transitPointId: { not: id } } });
+      if (conflict) throw new BadRequestException('A transit officer can only be nominated to one transit point');
+      await this.prisma.$transaction(async (tx) => {
+        await tx.transitPointOfficer.deleteMany({ where: { transitPointId: id } });
+        await tx.transitPointOfficer.createMany({ data: requestedOfficerIds.map((officerId) => ({ transitPointId: id, officerId, nominatedBy: userId })) });
+      });
+    }
+    const updated = await this.prisma.transitPoint.update({ where: { id }, data: { ...pointData, officerId: requestedOfficerIds?.[0] ?? pointData.officerId, name: data.name?.trim() } });
     await this.audit(userId, 'TRANSIT_POINT_UPDATED', 'TransitPoint', id, updated);
     return updated;
   }
 
   async officerWorkspace(officerId: string) {
-    const points = await this.prisma.transitPoint.findMany({ where: { officerId, active: true }, orderBy: { name: 'asc' } });
+    const assignedIds = await this.assignedPointIds(officerId);
+    const points = await this.prisma.transitPoint.findMany({ where: { id: { in: assignedIds }, active: true }, orderBy: { name: 'asc' } });
     const pointIds = points.map((point) => point.id);
     const routeIds = [...new Set(points.map((point) => point.routeId).filter(Boolean) as string[])];
     const routes = routeIds.length ? await this.prisma.route.findMany({ where: { id: { in: routeIds } } }) : [];
@@ -165,7 +234,8 @@ export class OperationsService {
 
   /** Parcels an officer may receive, verify, or hand over at their own transit points. */
   async officerParcels(officerId: string) {
-    const points = await this.prisma.transitPoint.findMany({ where: { officerId, active: true }, select: { id: true, routeId: true } });
+    const assignedIds = await this.assignedPointIds(officerId);
+    const points = await this.prisma.transitPoint.findMany({ where: { id: { in: assignedIds }, active: true }, select: { id: true, routeId: true } });
     const pointIds = points.map((point) => point.id);
     const routeIds = [...new Set(points.map((point) => point.routeId).filter((id): id is string => !!id))];
     return this.prisma.parcel.findMany({
@@ -214,8 +284,10 @@ export class OperationsService {
     return this.addCompartment({ compartmentNo: data.compartmentNo.trim(), size: data.size }, officerId, UserRole.TRANSIT_OFFICER);
   }
 
-  async inspectAndDismissBatch(batchId: string, data: { transitPointId: string; inspections: { parcelId: string; condition: SealCondition; notes?: string }[] }, officerId: string) {
-    const point = await this.prisma.transitPoint.findFirst({ where: { id: data.transitPointId, officerId, active: true } });
+  async inspectAndDismissBatch(batchId: string, data: { transitPointId: string; inspections: { parcelId: string; condition: SealCondition; disposition?: 'CONTINUE' | 'DIVERT'; notes?: string }[] }, officerId: string) {
+    const assignedIds = await this.assignedPointIds(officerId);
+    if (!assignedIds.includes(data.transitPointId)) throw new NotFoundException('Assigned transit point not found');
+    const point = await this.prisma.transitPoint.findFirst({ where: { id: data.transitPointId, active: true } });
     if (!point) throw new NotFoundException('Transit point is not assigned to this officer');
     if (!point.routeId) throw new BadRequestException('Transit point has no route assigned');
     const batch = await this.prisma.batch.findFirst({ where: { id: batchId, routeId: point.routeId, status: BatchStatus.IN_TRANSIT } });
@@ -225,19 +297,26 @@ export class OperationsService {
     const expected = new Set(memberships.map((item) => item.parcelId));
     if (new Set(data.inspections.map((item) => item.parcelId)).size !== expected.size || data.inspections.some((item) => !expected.has(item.parcelId))) throw new BadRequestException('Inspection list does not match the batch parcels');
     const blocked = data.inspections.filter((item) => item.condition !== SealCondition.INTACT);
-    return this.prisma.$transaction(async (tx) => {
+    const diverted = data.inspections.filter((item) => item.condition === SealCondition.INTACT && item.disposition === 'DIVERT');
+    const event = await this.prisma.$transaction(async (tx) => {
       for (const inspection of data.inspections) {
-        const decision = inspection.condition === SealCondition.INTACT ? 'CLEARED' : 'HELD';
+        const decision = inspection.condition !== SealCondition.INTACT ? 'HELD' : inspection.disposition === 'DIVERT' ? 'DIVERTED' : 'CLEARED';
         await tx.transitInspection.create({ data: { batchId, parcelId: inspection.parcelId, transitPointId: point.id, officerId, condition: inspection.condition, decision, notes: inspection.notes } });
         const parcel = await tx.parcel.findUniqueOrThrow({ where: { id: inspection.parcelId } });
         await tx.parcelStatusHistory.create({ data: { parcelId: parcel.id, status: parcel.status, location: point.name, updatedBy: officerId, notes: `Transit inspection ${inspection.condition}; ${decision}${inspection.notes ? ` — ${inspection.notes}` : ''}` } });
-        if (decision === 'HELD') await tx.batchParcel.updateMany({ where: { batchId, parcelId: parcel.id, removedAt: null }, data: { removedAt: new Date() } });
-        else await tx.parcel.update({ where: { id: parcel.id }, data: { status: ParcelStatus.at_transit_point, currentLocation: point.name, currentTransitPointId: point.id } });
+        if (decision === 'HELD' || decision === 'DIVERTED') {
+          await tx.batchParcel.updateMany({ where: { batchId, parcelId: parcel.id, removedAt: null }, data: { removedAt: new Date() } });
+          if (decision === 'DIVERTED') await tx.parcel.update({ where: { id: parcel.id }, data: { status: ParcelStatus.at_transit_point, currentLocation: point.name, currentTransitPointId: point.id, driverId: null } });
+        } else {
+          await tx.parcel.update({ where: { id: parcel.id }, data: { status: ParcelStatus.in_transit, currentLocation: point.name, currentTransitPointId: point.id } });
+          await tx.parcelStatusHistory.create({ data: { parcelId: parcel.id, status: ParcelStatus.in_transit, location: point.name, updatedBy: officerId, notes: 'Verified in good condition; continuing on the same route' } });
+        }
       }
-      await tx.batchEvent.create({ data: { batchId, transitPointId: point.id, type: 'DEPARTED', notes: `Dismissed by transit officer; ${blocked.length} parcel(s) held`, createdBy: officerId } });
-      await tx.auditLog.create({ data: { userId: officerId, action: 'BATCH_INSPECTED_AND_DISMISSED', entityType: 'Batch', entityId: batchId, after: { transitPointId: point.id, inspected: data.inspections.length, held: blocked.map((item) => item.parcelId) } } });
-      return { dismissed: data.inspections.length - blocked.length, held: blocked.length };
+      await tx.batchEvent.create({ data: { batchId, transitPointId: point.id, type: 'DEPARTED', notes: `Dismissed by transit officer; ${blocked.length} held, ${diverted.length} diverted`, createdBy: officerId } });
+      await tx.auditLog.create({ data: { userId: officerId, action: 'BATCH_INSPECTED_AND_DISMISSED', entityType: 'Batch', entityId: batchId, after: { transitPointId: point.id, inspected: data.inspections.length, held: blocked.map((item) => item.parcelId), diverted: diverted.map((item) => item.parcelId) } } });
+      return { continuing: data.inspections.length - blocked.length - diverted.length, diverted: diverted.length, held: blocked.length };
     });
+    return event;
   }
 
   private validateRoute(data: { name: string; origin: string; destination: string }) {
@@ -263,7 +342,13 @@ export class OperationsService {
     if (!route) throw new NotFoundException('Active route not found');
     const parcels = await this.prisma.parcel.findMany({ where: { id: { in: data.parcelIds }, deletedAt: null } });
     if (parcels.length !== data.parcelIds.length) throw new BadRequestException('One or more selected parcels do not exist');
-    if (parcels.some((parcel) => parcel.status !== ParcelStatus.collected && parcel.status !== ParcelStatus.at_transit_point)) throw new BadRequestException('Only collected parcels or parcels held at a transit point can be batched');
+    if (parcels.some((parcel) => parcel.status !== ParcelStatus.collected && parcel.status !== ParcelStatus.in_transit && parcel.status !== ParcelStatus.at_transit_point)) throw new BadRequestException('Only collected, in-transit, or transit-point parcels can be batched');
+    const driver = data.driverId ? await this.prisma.user.findFirst({ where: { id: data.driverId, role: UserRole.DRIVER, isActive: true, deletedAt: null } }) : null;
+    if (data.driverId && !driver) throw new BadRequestException('Select an active driver for this route');
+    if (driver) {
+      const profile = await this.prisma.driverProfile.findUnique({ where: { userId: driver.id } });
+      if (!profile || profile.approvalStatus !== 'APPROVED' || !profile.routesServed.includes(route.id)) throw new BadRequestException('The selected driver must be approved for this route');
+    }
     const routePoints = await this.prisma.routeTransitPoint.findMany({ where: { routeId: route.id }, orderBy: { sequence: 'asc' } });
     const pointRecords = routePoints.length ? await this.prisma.transitPoint.findMany({ where: { id: { in: routePoints.map((item) => item.transitPointId) } } }) : [];
     const routeLocations = [route.origin, ...pointRecords.map((point) => point.name), route.destination].map((value) => value.trim().toLowerCase());
@@ -279,12 +364,14 @@ export class OperationsService {
       const created = await tx.batch.create({ data: { batchNumber: `BAT-${new Date().getFullYear()}-${Date.now()}-${randomInt(100, 999)}`, routeId: data.routeId, driverId: data.driverId } });
       await tx.batchParcel.createMany({ data: data.parcelIds.map((parcelId) => ({ batchId: created.id, parcelId })) });
       for (const parcel of parcels) {
-        await tx.parcel.update({ where: { id: parcel.id }, data: { routeId: route.id } });
-        await tx.parcelStatusHistory.create({ data: { parcelId: parcel.id, status: parcel.status, updatedBy: userId, location: parcel.currentLocation || parcel.pickupAddress, notes: `Added to ${created.batchNumber}; awaiting physical load confirmation` } });
+        await tx.parcel.update({ where: { id: parcel.id }, data: { routeId: route.id, driverId: data.driverId ?? null } });
+        if (data.driverId) await tx.parcelAssignment.create({ data: { parcelId: parcel.id, driverId: data.driverId, assignedBy: userId } });
+        await tx.parcelStatusHistory.create({ data: { parcelId: parcel.id, status: parcel.status, updatedBy: userId, location: parcel.currentLocation || parcel.pickupAddress, notes: `En-routed on ${route.name} in ${created.batchNumber}${driver ? `; assigned to ${driver.name}` : '; awaiting driver assignment'}` } });
       }
       await tx.auditLog.create({ data: { userId, action: 'BATCH_CREATED', entityType: 'Batch', entityId: created.id, after: { routeId: data.routeId, parcelIds: data.parcelIds } } });
       return created;
     });
+    if (driver) await Promise.all(parcels.map((parcel) => this.notifications.create({ userId: driver.id, parcelId: parcel.id, type: 'DRIVER_ASSIGNED', title: 'New onward-route assignment', message: `Parcel ${parcel.trackingNumber} has been assigned to you on the ${route.name} route.`, actionUrl: `/driver/parcels/${parcel.id}` })));
     return batch;
   }
 
@@ -297,30 +384,42 @@ export class OperationsService {
     if (!point) throw new NotFoundException('Active transit point not found');
     // A parcel may be handed off at a route's origin even where the point itself belongs to the inbound route.
     if (!membership && route.origin.trim().toLowerCase() !== point.name.trim().toLowerCase()) throw new BadRequestException('The selected transit point must be on, or be the origin of, the onward route');
-    if (role === UserRole.TRANSIT_OFFICER && point.officerId !== userId) throw new BadRequestException('You can only verify parcels at your assigned transit point');
+    if (role === UserRole.TRANSIT_OFFICER && !(await this.assignedPointIds(userId)).includes(point.id)) throw new BadRequestException('You can only verify parcels at your assigned transit point');
     const parcels = await this.prisma.parcel.findMany({ where: { id: { in: data.parcelIds }, deletedAt: null } });
     if (parcels.length !== data.parcelIds.length) throw new BadRequestException('One or more parcels could not be found');
+    const destinationParcels: typeof parcels = [];
+    const onwardParcels: typeof parcels = [];
+    const collectionDeadline = new Date(Date.now() + 12 * 60 * 60 * 1000);
     await this.prisma.$transaction(async (tx) => {
       for (const parcel of parcels) {
-        await tx.parcel.update({ where: { id: parcel.id }, data: { routeId: data.routeId, status: ParcelStatus.at_transit_point, currentLocation: point.name, currentTransitPointId: point.id } });
-        await tx.parcelStatusHistory.create({ data: { parcelId: parcel.id, status: ParcelStatus.at_transit_point, updatedBy: userId, location: point.name, notes: 'Verified at transit point in good condition' } });
+        const isDestination = this.samePlace(parcel.deliveryAddress, point.name) || (this.samePlace(route.destination, point.name) && this.samePlace(parcel.deliveryAddress, route.destination));
+        const status = isDestination ? ParcelStatus.at_destination : ParcelStatus.at_transit_point;
+        await tx.parcel.update({ where: { id: parcel.id }, data: { routeId: data.routeId, status, currentLocation: point.name, currentTransitPointId: point.id, driverId: isDestination ? parcel.driverId : null } });
+        await tx.parcelStatusHistory.create({ data: { parcelId: parcel.id, status, updatedBy: userId, location: point.name, notes: isDestination ? `Verified at destination transit point. Collect or request a locker by ${collectionDeadline.toISOString()}` : `Verified at transit point and ready to be en-routed on ${route.name}` } });
+        (isDestination ? destinationParcels : onwardParcels).push(parcel);
       }
     });
+    await Promise.all(destinationParcels.flatMap((parcel) => [parcel.recipientId, parcel.senderId].filter((id): id is string => !!id).map((id) => this.notifications.create({ userId: id, parcelId: parcel.id, type: 'PARCEL_DELIVERED_TO_RECIPIENT', title: 'Parcel verified at destination', message: `Parcel ${parcel.trackingNumber} is ready at ${point.name}. Collect it or request a locker within 12 hours.`, actionUrl: `/parcels/${parcel.id}` }))));
+    await Promise.all(destinationParcels.map((parcel) => this.sendCollectionEmail(parcel, {
+      location: point.name,
+      deadline: collectionDeadline,
+    })));
     await this.audit(userId, 'PARCELS_VERIFIED_AT_TRANSIT', 'TransitPoint', point.id, { routeId: data.routeId, parcelIds: data.parcelIds });
-    return { verified: parcels.length };
+    return { verified: parcels.length, atDestination: destinationParcels.length, awaitingOnwardRoute: onwardParcels.length, collectionDeadline: destinationParcels.length ? collectionDeadline : null };
   }
 
-  async confirmBatchLoad(batchId: string, parcelIds: string[], userId: string) {
+  async confirmBatchLoad(batchId: string, parcelIds: string[], user: { id: string; role: UserRole }) {
     const batch = await this.prisma.batch.findFirst({ where: { id: batchId, status: BatchStatus.CREATED } });
     if (!batch) throw new BadRequestException('Only a batch that has not departed can be loaded');
+    if (user.role === UserRole.DRIVER && batch.driverId !== user.id) throw new NotFoundException('Batch is not assigned to you');
     if (!parcelIds?.length || new Set(parcelIds).size !== parcelIds.length) throw new BadRequestException('Select each physically loaded parcel exactly once');
     const memberships = await this.prisma.batchParcel.findMany({ where: { batchId, parcelId: { in: parcelIds }, removedAt: null } });
     if (memberships.length !== parcelIds.length) throw new BadRequestException('A selected parcel is not in this batch');
     await this.prisma.$transaction(async (tx) => {
-      await tx.batchParcel.updateMany({ where: { batchId, parcelId: { in: parcelIds }, removedAt: null }, data: { loadedAt: new Date(), loadedBy: userId } });
+      await tx.batchParcel.updateMany({ where: { batchId, parcelId: { in: parcelIds }, removedAt: null }, data: { loadedAt: new Date(), loadedBy: user.id } });
       for (const parcelId of parcelIds) {
         const parcel = await tx.parcel.findUniqueOrThrow({ where: { id: parcelId } });
-        await tx.parcelStatusHistory.create({ data: { parcelId, status: parcel.status, updatedBy: userId, location: parcel.currentLocation || parcel.pickupAddress, notes: `Physically loaded into batch ${batch.batchNumber}` } });
+        await tx.parcelStatusHistory.create({ data: { parcelId, status: parcel.status, updatedBy: user.id, location: parcel.currentLocation || parcel.pickupAddress, notes: `Physically loaded into batch ${batch.batchNumber}` } });
       }
     });
     return { loaded: parcelIds.length };
@@ -341,9 +440,10 @@ export class OperationsService {
     return { removed: true };
   }
 
-  async recordBatchEvent(batchId: string, data: { type: string; transitPointId?: string; notes?: string }, userId: string) {
+  async recordBatchEvent(batchId: string, data: { type: string; transitPointId?: string; notes?: string }, user: { id: string; role: UserRole }) {
     const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
     if (!batch || batch.status === BatchStatus.CLOSED || batch.status === BatchStatus.SPLIT) throw new BadRequestException('Batch is not active');
+    if (user.role === UserRole.DRIVER && batch.driverId !== user.id) throw new NotFoundException('Batch not found');
     const type = data.type.toUpperCase();
     if (!['DEPARTED', 'ARRIVED_AT_TRANSIT_POINT', 'ARRIVED_AT_DESTINATION'].includes(type)) throw new BadRequestException('Use DEPARTED, ARRIVED_AT_TRANSIT_POINT, or ARRIVED_AT_DESTINATION');
     const route = await this.prisma.route.findUniqueOrThrow({ where: { id: batch.routeId } });
@@ -358,30 +458,37 @@ export class OperationsService {
     if (!members.length) throw new BadRequestException('Confirm which parcels are physically loaded before movement');
     if (type === 'DEPARTED' && batch.status !== BatchStatus.CREATED && !(await this.prisma.batchEvent.findFirst({ where: { batchId, type: { in: ['ARRIVED_AT_TRANSIT_POINT', 'ARRIVED_AT_DESTINATION'] } }, orderBy: { createdAt: 'desc' } }))) throw new BadRequestException('Batch is already in transit');
     const point = data.transitPointId ? await this.prisma.transitPoint.findUnique({ where: { id: data.transitPointId } }) : null;
-    const status = type === 'DEPARTED' ? ParcelStatus.in_transit : type === 'ARRIVED_AT_DESTINATION' ? ParcelStatus.at_destination : ParcelStatus.at_transit_point;
+    const status = type === 'DEPARTED' ? ParcelStatus.in_transit : type === 'ARRIVED_AT_DESTINATION' ? ParcelStatus.at_destination : ParcelStatus.arrived_at_transit_point;
     const location = type === 'ARRIVED_AT_DESTINATION' ? route.destination : point?.name ?? route.origin;
-    return this.prisma.$transaction(async (tx) => {
-      const event = await tx.batchEvent.create({ data: { batchId, createdBy: userId, ...data, type } });
+    const event = await this.prisma.$transaction(async (tx) => {
+      const event = await tx.batchEvent.create({ data: { batchId, createdBy: user.id, ...data, type } });
       for (const { parcelId } of members) {
         await tx.parcel.update({ where: { id: parcelId }, data: { status, currentLocation: location, currentTransitPointId: type === 'ARRIVED_AT_TRANSIT_POINT' ? data.transitPointId : null } });
-        await tx.parcelStatusHistory.create({ data: { parcelId, status, updatedBy: userId, location, notes: `Batch ${batch.batchNumber}: ${type}${data.notes ? ` — ${data.notes}` : ''}` } });
+        await tx.parcelStatusHistory.create({ data: { parcelId, status, updatedBy: user.id, location, notes: `Batch ${batch.batchNumber}: ${type}${data.notes ? ` — ${data.notes}` : ''}` } });
       }
       await tx.batch.update({ where: { id: batchId }, data: { status: type === 'ARRIVED_AT_DESTINATION' ? BatchStatus.CLOSED : type === 'DEPARTED' ? BatchStatus.IN_TRANSIT : batch.status, closedAt: type === 'ARRIVED_AT_DESTINATION' ? new Date() : undefined } });
-      await tx.auditLog.create({ data: { userId, action: 'BATCH_EVENT_RECORDED', entityType: 'Batch', entityId: batchId, after: { eventId: event.id, type: data.type, parcelCount: members.length } } });
+      await tx.auditLog.create({ data: { userId: user.id, action: 'BATCH_EVENT_RECORDED', entityType: 'Batch', entityId: batchId, after: { eventId: event.id, type: data.type, parcelCount: members.length } } });
       return event;
     });
+    if (type === 'ARRIVED_AT_DESTINATION') {
+      const arrived = await this.prisma.parcel.findMany({ where: { id: { in: members.map((member) => member.parcelId) } } });
+      await Promise.all(arrived.flatMap((parcel) => [parcel.recipientId, parcel.senderId].filter((id): id is string => !!id).map((id) => this.notifications.create({ userId: id, parcelId: parcel.id, type: 'PARCEL_DELIVERED_TO_RECIPIENT', title: 'Parcel reached its destination', message: `Parcel ${parcel.trackingNumber} has reached ${route.destination}. Collect it or request a locker within 12 hours.`, actionUrl: `/parcels/${parcel.id}` }))));
+    }
+    return event;
   }
 
   async listBatches(user?: { id: string; role: UserRole }) {
     const allowedRouteIds = await this.officerRouteIds(user);
-    const batches = await this.prisma.batch.findMany({ where: allowedRouteIds ? { routeId: { in: allowedRouteIds } } : undefined, orderBy: { createdAt: 'desc' } });
+    const where = user?.role === UserRole.DRIVER ? { driverId: user.id } : allowedRouteIds ? { routeId: { in: allowedRouteIds } } : undefined;
+    const batches = await this.prisma.batch.findMany({ where, orderBy: { createdAt: 'desc' } });
     const counts = await this.prisma.batchParcel.groupBy({ by: ['batchId'], where: { removedAt: null }, _count: true });
     return batches.map((batch) => ({ ...batch, parcelCount: counts.find((count) => count.batchId === batch.id)?._count ?? 0 }));
   }
 
-  async getBatch(id: string) {
+  async getBatch(id: string, user?: { id: string; role: UserRole }) {
     const batch = await this.prisma.batch.findUnique({ where: { id } });
     if (!batch) throw new NotFoundException('Batch not found');
+    if (user?.role === UserRole.DRIVER && batch.driverId !== user.id) throw new NotFoundException('Batch not found');
     const [memberships, events] = await Promise.all([
       this.prisma.batchParcel.findMany({ where: { batchId: id }, orderBy: { addedAt: 'asc' } }),
       this.prisma.batchEvent.findMany({ where: { batchId: id }, orderBy: { createdAt: 'asc' } }),
@@ -427,7 +534,8 @@ export class OperationsService {
   async addCompartment(data: { stationId?: string; compartmentNo: string; size: any }, userId: string, role?: UserRole) {
     let stationId = data.stationId;
     if (!stationId || role === UserRole.TRANSIT_OFFICER) {
-      const points = await this.prisma.transitPoint.findMany({ where: { officerId: userId, active: true } });
+      const assignedIds = await this.assignedPointIds(userId);
+      const points = await this.prisma.transitPoint.findMany({ where: { id: { in: assignedIds }, active: true } });
       if (points.length !== 1) throw new BadRequestException('A locker can be created automatically only when you are assigned to one active transit point');
       const point = points[0];
       let lockerPoint = await this.prisma.lockerStation.findFirst({ where: { transitPointId: point.id, active: true } });
@@ -441,27 +549,30 @@ export class OperationsService {
     return compartment;
   }
 
-  async updateLockerCompartment(id: string, data: { compartmentNo?: string; size?: any }, userId: string) {
+  async updateLockerCompartment(id: string, data: { compartmentNo?: string; size?: any }, userId: string, role?: UserRole) {
     const compartment = await this.prisma.lockerCompartment.findUnique({ where: { id } });
     if (!compartment) throw new NotFoundException('Locker compartment not found');
+    await this.assertOfficerStationAccess(compartment.stationId, userId, role);
     if (compartment.status !== LockerStatus.AVAILABLE) throw new BadRequestException('Only an available locker can be edited');
     const updated = await this.prisma.lockerCompartment.update({ where: { id }, data: { compartmentNo: data.compartmentNo?.trim() || undefined, size: data.size } });
     await this.audit(userId, 'LOCKER_COMPARTMENT_UPDATED', 'LockerCompartment', id, updated);
     return updated;
   }
 
-  async deleteLockerCompartment(id: string, userId: string) {
+  async deleteLockerCompartment(id: string, userId: string, role?: UserRole) {
     const compartment = await this.prisma.lockerCompartment.findUnique({ where: { id } });
     if (!compartment) throw new NotFoundException('Locker compartment not found');
+    await this.assertOfficerStationAccess(compartment.stationId, userId, role);
     if (compartment.status !== LockerStatus.AVAILABLE) throw new BadRequestException('Only an empty, available locker can be deleted');
     await this.prisma.lockerCompartment.delete({ where: { id } });
     await this.audit(userId, 'LOCKER_COMPARTMENT_DELETED', 'LockerCompartment', id, { stationId: compartment.stationId, compartmentNo: compartment.compartmentNo });
     return { deleted: true };
   }
 
-  async deactivateLockerCompartment(id: string, userId: string) {
+  async deactivateLockerCompartment(id: string, userId: string, role?: UserRole) {
     const compartment = await this.prisma.lockerCompartment.findUnique({ where: { id } });
     if (!compartment) throw new NotFoundException('Locker compartment not found');
+    await this.assertOfficerStationAccess(compartment.stationId, userId, role);
     if (compartment.status !== LockerStatus.AVAILABLE) throw new BadRequestException('Only an empty, available locker can be deactivated');
     const updated = await this.prisma.lockerCompartment.update({ where: { id }, data: { status: LockerStatus.OUT_OF_SERVICE } });
     await this.audit(userId, 'LOCKER_COMPARTMENT_DEACTIVATED', 'LockerCompartment', id, updated);
@@ -469,7 +580,9 @@ export class OperationsService {
   }
 
   async listLockerStations(user?: { id: string; role: UserRole }) {
-    const officerPoints = user?.role === UserRole.TRANSIT_OFFICER ? await this.prisma.transitPoint.findMany({ where: { officerId: user.id, active: true }, select: { id: true } }) : [];
+    await this.expireLockerAssignments();
+    const assignedIds = user?.role === UserRole.TRANSIT_OFFICER ? await this.assignedPointIds(user.id) : [];
+    const officerPoints = user?.role === UserRole.TRANSIT_OFFICER ? await this.prisma.transitPoint.findMany({ where: { id: { in: assignedIds }, active: true }, select: { id: true } }) : [];
     const stationWhere = user?.role === UserRole.TRANSIT_OFFICER ? { transitPointId: { in: officerPoints.map((point) => point.id) } } : undefined;
     const [stations, compartments, assignments] = await Promise.all([
       this.prisma.lockerStation.findMany({ where: stationWhere, orderBy: { name: 'asc' } }),
@@ -491,14 +604,22 @@ export class OperationsService {
     }));
   }
 
-  async assignLocker(data: { parcelId: string; stationId: string; routeId?: string; transitPointId?: string; size: any; expiresInMinutes?: number }, userId: string) {
+  async assignLocker(data: { parcelId: string; stationId: string; routeId?: string; transitPointId?: string; size: any; expiresInMinutes?: number }, userId: string, role?: UserRole) {
     const station = await this.prisma.lockerStation.findFirst({ where: { id: data.stationId, active: true } });
     if (!station) throw new NotFoundException('Active locker station not found');
+    await this.assertOfficerStationAccess(station.id, userId, role);
     if (data.transitPointId && station.transitPointId && station.transitPointId !== data.transitPointId) throw new BadRequestException('The selected locker is not assigned to this transit point');
     const parcel = await this.prisma.parcel.findFirst({ where: { id: data.parcelId, deletedAt: null } });
     if (!parcel) throw new NotFoundException('Parcel not found');
+    if (role === UserRole.TRANSIT_OFFICER) {
+      const pointIds = await this.assignedPointIds(userId);
+      const points = await this.prisma.transitPoint.findMany({ where: { id: { in: pointIds } }, select: { id: true, name: true } });
+      const isAtOfficerPoint = !!parcel.currentTransitPointId && pointIds.includes(parcel.currentTransitPointId)
+        || points.some((point) => this.samePlace(parcel.currentLocation, point.name));
+      if (!isAtOfficerPoint) throw new NotFoundException('Parcel not found at your assigned transit point');
+    }
     if (data.routeId && parcel.routeId !== data.routeId) throw new BadRequestException('The selected parcel does not belong to this route');
-    if (![ParcelStatus.at_destination, ParcelStatus.at_transit_point].includes(parcel.status)) throw new BadRequestException('Parcel must be verified at a transit point or be at its final destination before locker assignment');
+    if (parcel.status !== ParcelStatus.at_destination && parcel.status !== ParcelStatus.at_transit_point) throw new BadRequestException('Parcel must be verified at a transit point or be at its final destination before locker assignment');
     const current = await this.prisma.lockerAssignment.findFirst({ where: { parcelId: data.parcelId, collectedAt: null, cancelledAt: null } });
     if (current) throw new BadRequestException('Parcel already has an active locker assignment');
     const compartment = await this.prisma.lockerCompartment.findFirst({
@@ -530,28 +651,100 @@ export class OperationsService {
       message: `Your parcel ${parcel.trackingNumber} is ready for collection. Use code ${code} at ${station.name}, locker ${compartment.compartmentNo}.`,
       actionUrl: `/parcels/${parcel.id}`,
     })));
+    await this.sendCollectionEmail(parcel, {
+      location: station.name,
+      locker: compartment.compartmentNo,
+      collectionCode: code,
+      deadline: new Date(Date.now() + (data.expiresInMinutes ?? 1440) * 60_000),
+    });
     return { assignment, collectionCode: code };
   }
 
   async requestLocker(data: { parcelId: string; stationId?: string; size?: any }, userId: string) {
     const parcel = await this.prisma.parcel.findFirst({ where: { id: data.parcelId, recipientId: userId, deletedAt: null } });
     if (!parcel) throw new NotFoundException('Parcel not found for this recipient');
-    if (parcel.status !== ParcelStatus.at_destination) throw new BadRequestException('A locker can be requested once the parcel reaches its destination');
+    if (new Set<ParcelStatus>([ParcelStatus.completed, ParcelStatus.cancelled, ParcelStatus.delivered]).has(parcel.status)) throw new BadRequestException('A locker cannot be requested for a closed parcel');
+    if (parcel.status === ParcelStatus.at_destination) {
+      const verified = await this.prisma.parcelStatusHistory.findFirst({ where: { parcelId: parcel.id, status: ParcelStatus.at_destination }, orderBy: { timestamp: 'desc' } });
+      if (!verified || verified.timestamp.getTime() + 12 * 60 * 60 * 1000 < Date.now()) throw new BadRequestException('The 12-hour locker request window has expired');
+    }
     const open = await this.prisma.lockerRequest.findFirst({ where: { parcelId: parcel.id, status: 'PENDING' } });
     if (open) throw new BadRequestException('A locker request is already pending for this parcel');
     return this.prisma.lockerRequest.create({ data: { parcelId: parcel.id, requestedBy: userId, stationId: data.stationId, size: data.size ?? 'MEDIUM' } });
   }
-  listLockerRequests() { return this.prisma.lockerRequest.findMany({ where: { status: 'PENDING' }, orderBy: { createdAt: 'asc' } }); }
-  async approveLockerRequest(id: string, data: { stationId: string; size?: any; expiresInMinutes?: number }, adminId: string) {
+  async listLockerRequests(user?: { id: string; role: UserRole }) {
+    const requests = await this.prisma.lockerRequest.findMany({ where: { status: 'PENDING' }, orderBy: { createdAt: 'asc' } });
+    if (user?.role !== UserRole.TRANSIT_OFFICER) return requests;
+    const pointIds = await this.assignedPointIds(user.id);
+    const points = await this.prisma.transitPoint.findMany({ where: { id: { in: pointIds } }, select: { name: true } });
+    const parcelIds = requests.map(request => request.parcelId);
+    const parcels = await this.prisma.parcel.findMany({ where: { id: { in: parcelIds }, OR: [{ currentTransitPointId: { in: pointIds } }, { currentLocation: { in: points.map(point => point.name) } }] }, select: { id: true } });
+    const allowed = new Set(parcels.map(parcel => parcel.id));
+    return requests.filter(request => allowed.has(request.parcelId));
+  }
+  async approveLockerRequest(id: string, data: { stationId: string; size?: any; expiresInMinutes?: number }, adminId: string, role?: UserRole) {
     const request = await this.prisma.lockerRequest.findFirst({ where: { id, status: 'PENDING' } });
     if (!request) throw new NotFoundException('Pending locker request not found');
-    const result = await this.assignLocker({ parcelId: request.parcelId, stationId: data.stationId, size: data.size ?? request.size, expiresInMinutes: data.expiresInMinutes }, adminId);
+    const result = await this.assignLocker({ parcelId: request.parcelId, stationId: data.stationId, size: data.size ?? request.size, expiresInMinutes: data.expiresInMinutes }, adminId, role);
     await this.prisma.lockerRequest.update({ where: { id }, data: { status: 'APPROVED', reviewedBy: adminId, reviewedAt: new Date() } });
     return result;
   }
-  async rejectLockerRequest(id: string, adminId: string) { return this.prisma.lockerRequest.update({ where: { id, status: 'PENDING' }, data: { status: 'REJECTED', reviewedBy: adminId, reviewedAt: new Date() } }); }
+  async rejectLockerRequest(id: string, adminId: string, role?: UserRole) {
+    const request = await this.prisma.lockerRequest.findFirst({ where: { id, status: 'PENDING' } });
+    if (!request) throw new NotFoundException('Pending locker request not found');
+    if (role === UserRole.TRANSIT_OFFICER) {
+      const pointIds = await this.assignedPointIds(adminId);
+      const points = await this.prisma.transitPoint.findMany({ where: { id: { in: pointIds } }, select: { name: true } });
+      const parcel = await this.prisma.parcel.findFirst({ where: { id: request.parcelId, OR: [{ currentTransitPointId: { in: pointIds } }, { currentLocation: { in: points.map(point => point.name) } }] } });
+      if (!parcel) throw new NotFoundException('Pending locker request not found at your assigned transit point');
+    }
+    return this.prisma.lockerRequest.update({ where: { id }, data: { status: 'REJECTED', reviewedBy: adminId, reviewedAt: new Date() } });
+  }
+
+  async requestLockerExtension(assignmentId: string, requestedMinutes: number, reason: string | undefined, userId: string) {
+    if (!Number.isInteger(requestedMinutes) || requestedMinutes < 60 || requestedMinutes > 10080) throw new BadRequestException('Extension must be between 60 minutes and 7 days');
+    const assignment = await this.prisma.lockerAssignment.findFirst({ where: { id: assignmentId, collectedAt: null, cancelledAt: null } });
+    if (!assignment) throw new NotFoundException('Active locker assignment not found');
+    const parcel = await this.prisma.parcel.findFirst({ where: { id: assignment.parcelId, recipientId: userId } });
+    if (!parcel) throw new NotFoundException('Locker assignment not found for this customer');
+    const open = await this.prisma.lockerExtensionRequest.findFirst({ where: { lockerAssignmentId: assignmentId, status: 'PENDING' } });
+    if (open) throw new BadRequestException('An extension request is already pending');
+    return this.prisma.lockerExtensionRequest.create({ data: { lockerAssignmentId: assignmentId, requestedBy: userId, requestedMinutes, reason } });
+  }
+
+  async listLockerExtensionRequests(user?: { id: string; role: UserRole }) {
+    const requests = await this.prisma.lockerExtensionRequest.findMany({ where: { status: 'PENDING' }, orderBy: { createdAt: 'asc' } });
+    if (user?.role !== UserRole.TRANSIT_OFFICER) return requests;
+    const pointIds = await this.assignedPointIds(user.id);
+    const assignmentIds = requests.map(request => request.lockerAssignmentId);
+    const assignments = await this.prisma.lockerAssignment.findMany({ where: { id: { in: assignmentIds } }, select: { id: true, compartmentId: true } });
+    const compartments = await this.prisma.lockerCompartment.findMany({ where: { id: { in: assignments.map(item => item.compartmentId) } }, select: { id: true, stationId: true } });
+    const stations = await this.prisma.lockerStation.findMany({ where: { id: { in: compartments.map(item => item.stationId) }, transitPointId: { in: pointIds } }, select: { id: true } });
+    const stationIds = new Set(stations.map(item => item.id));
+    const allowedAssignments = new Set(assignments.filter(item => stationIds.has(compartments.find(compartment => compartment.id === item.compartmentId)?.stationId ?? '')).map(item => item.id));
+    return requests.filter(request => allowedAssignments.has(request.lockerAssignmentId));
+  }
+
+  async reviewLockerExtension(id: string, approved: boolean, reviewerId: string, role?: UserRole) {
+    const request = await this.prisma.lockerExtensionRequest.findFirst({ where: { id, status: 'PENDING' } });
+    if (!request) throw new NotFoundException('Pending extension request not found');
+    const assignment = await this.prisma.lockerAssignment.findUnique({ where: { id: request.lockerAssignmentId }, select: { compartmentId: true } });
+    const compartment = assignment ? await this.prisma.lockerCompartment.findUnique({ where: { id: assignment.compartmentId }, select: { stationId: true } }) : null;
+    if (!compartment) throw new NotFoundException('Locker assignment not found');
+    await this.assertOfficerStationAccess(compartment.stationId, reviewerId, role);
+    return this.prisma.$transaction(async (tx) => {
+      if (approved) {
+        const code = await tx.collectionCode.findFirst({ where: { lockerAssignmentId: request.lockerAssignmentId, usedAt: null }, orderBy: { createdAt: 'desc' } });
+        if (!code) throw new NotFoundException('Active collection window not found');
+        const base = code.expiresAt > new Date() ? code.expiresAt : new Date();
+        await tx.collectionCode.update({ where: { id: code.id }, data: { expiresAt: new Date(base.getTime() + request.requestedMinutes * 60_000) } });
+      }
+      return tx.lockerExtensionRequest.update({ where: { id }, data: { status: approved ? 'APPROVED' : 'REJECTED', reviewedBy: reviewerId, reviewedAt: new Date() } });
+    });
+  }
 
   async collectFromLocker(assignmentId: string, code: string, user: { id: string; role: UserRole }) {
+    await this.expireLockerAssignments();
     const attempt = this.lockerAttempts.get(assignmentId);
     if (attempt?.lockedUntil && attempt.lockedUntil > new Date()) throw new BadRequestException('Too many invalid attempts. Try again later');
     const assignment = await this.prisma.lockerAssignment.findUnique({ where: { id: assignmentId } });
@@ -578,6 +771,42 @@ export class OperationsService {
     return { collected: true };
   }
 
+  async regenerateLockerCode(assignmentId: string, userId: string, expiresInMinutes = 1440, role?: UserRole) {
+    await this.expireLockerAssignments();
+    const assignment = await this.prisma.lockerAssignment.findUnique({ where: { id: assignmentId } });
+    if (!assignment || assignment.collectedAt || assignment.cancelledAt) throw new NotFoundException('Active locker assignment not found');
+    const compartment = await this.prisma.lockerCompartment.findUnique({ where: { id: assignment.compartmentId }, select: { stationId: true } });
+    if (!compartment) throw new NotFoundException('Locker assignment not found');
+    await this.assertOfficerStationAccess(compartment.stationId, userId, role);
+    if (expiresInMinutes < 1 || expiresInMinutes > 10080) throw new BadRequestException('Code validity must be between 1 minute and 7 days');
+    const code = randomInt(100000, 999999).toString();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.collectionCode.updateMany({ where: { lockerAssignmentId: assignmentId, usedAt: null }, data: { usedAt: new Date() } });
+      await tx.collectionCode.create({ data: { lockerAssignmentId: assignmentId, codeHash: await bcrypt.hash(code, 10), expiresAt: new Date(Date.now() + expiresInMinutes * 60_000) } });
+      await tx.auditLog.create({ data: { userId, action: 'LOCKER_CODE_REGENERATED', entityType: 'LockerAssignment', entityId: assignmentId } });
+    });
+    this.lockerAttempts.delete(assignmentId);
+    return { assignmentId, collectionCode: code, expiresAt: new Date(Date.now() + expiresInMinutes * 60_000) };
+  }
+
+  async expireLockerAssignments(now = new Date()) {
+    const expiredCodes = await this.prisma.collectionCode.findMany({ where: { usedAt: null, expiresAt: { lt: now } }, select: { id: true, lockerAssignmentId: true } });
+    if (!expiredCodes.length) return { expired: 0 };
+    const assignmentIds = [...new Set(expiredCodes.map((code) => code.lockerAssignmentId))];
+    const assignments = await this.prisma.lockerAssignment.findMany({ where: { id: { in: assignmentIds }, collectedAt: null, cancelledAt: null } });
+    for (const assignment of assignments) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.collectionCode.updateMany({ where: { lockerAssignmentId: assignment.id, usedAt: null }, data: { usedAt: now } });
+        await tx.lockerAssignment.update({ where: { id: assignment.id }, data: { cancelledAt: now } });
+        await tx.lockerCompartment.update({ where: { id: assignment.compartmentId }, data: { status: LockerStatus.AVAILABLE, currentParcelId: null } });
+        await tx.parcel.update({ where: { id: assignment.parcelId }, data: { status: ParcelStatus.at_destination } });
+        await tx.parcelStatusHistory.create({ data: { parcelId: assignment.parcelId, status: ParcelStatus.at_destination, location: 'Destination transit point', notes: 'Locker collection window expired; parcel returned to transit-point custody' } });
+        await tx.auditLog.create({ data: { action: 'LOCKER_ASSIGNMENT_EXPIRED', entityType: 'LockerAssignment', entityId: assignment.id, after: { parcelId: assignment.parcelId } } });
+      });
+    }
+    return { expired: assignments.length };
+  }
+
   async completeDirectDelivery(parcelId: string, user: { id: string; role: UserRole }) {
     const parcel = await this.prisma.parcel.findFirst({ where: { id: parcelId, status: ParcelStatus.at_destination, deletedAt: null } });
     if (!parcel || (user.role === UserRole.DRIVER && parcel.driverId !== user.id)) throw new NotFoundException('Parcel is not at destination or not assigned to you');
@@ -590,8 +819,10 @@ export class OperationsService {
   }
 
   async completeTransitPickup(parcelId: string, user: { id: string; role: UserRole }) {
-    const parcel = await this.prisma.parcel.findFirst({ where: { id: parcelId, status: ParcelStatus.at_transit_point, deletedAt: null } });
+    const parcel = await this.prisma.parcel.findFirst({ where: { id: parcelId, status: ParcelStatus.at_destination, deletedAt: null } });
     if (!parcel || (user.role === UserRole.CUSTOMER && parcel.recipientId !== user.id)) throw new NotFoundException('Verified parcel is not available for collection at this transit point');
+    const verified = await this.prisma.parcelStatusHistory.findFirst({ where: { parcelId, status: ParcelStatus.at_destination }, orderBy: { timestamp: 'desc' } });
+    if (!verified || verified.timestamp.getTime() + 12 * 60 * 60 * 1000 < Date.now()) throw new BadRequestException('The 12-hour transit-point collection window has expired');
     return this.prisma.$transaction(async (tx) => {
       const completed = await tx.parcel.update({ where: { id: parcelId }, data: { status: ParcelStatus.completed, deliveredToRecipient: true, deliveryConfirmedAt: new Date(), deliveryConfirmedBy: user.id, completedAt: new Date(), completedBy: user.id } });
       await tx.parcelStatusHistory.create({ data: { parcelId, status: ParcelStatus.completed, updatedBy: user.id, location: parcel.currentLocation, notes: 'Parcel collected by recipient at transit point and completed' } });
@@ -607,16 +838,21 @@ export class OperationsService {
     if (existing?.active) throw new BadRequestException('Parcel already has an active security seal');
     const identifier = `SEAL-${randomBytes(12).toString('hex')}`;
     return this.prisma.$transaction(async (tx) => {
-      const seal = await tx.parcelSeal.create({ data: { parcelId, identifier, signedData: randomBytes(32).toString('hex'), createdBy: userId } });
+      const signedData = randomBytes(32).toString('hex');
+      const signature = createHmac('sha256', signedData).update(`${parcelId}:${identifier}`).digest('hex');
+      const qrValue = JSON.stringify({ type: 'SENDIT_SEAL', parcelId, identifier, signature });
+      const seal = await tx.parcelSeal.create({ data: { parcelId, identifier, signedData, createdBy: userId } });
       await tx.parcel.update({ where: { id: parcelId }, data: { qrSealIdentifier: identifier } });
       await tx.auditLog.create({ data: { userId, action: 'PARCEL_SEAL_CREATED', entityType: 'ParcelSeal', entityId: seal.id, after: { parcelId, identifier } } });
-      return { ...seal, qrValue: JSON.stringify({ type: 'SENDIT_SEAL', parcelId, identifier }) };
+      return { ...seal, qrValue, qrDataUrl: await QRCode.toDataURL(qrValue, { errorCorrectionLevel: 'H', margin: 1, width: 360 }) };
     });
   }
 
-  async scanSeal(data: { identifier: string; parcelId: string; condition: SealCondition; transitPointId?: string; imageUrl?: string; comments?: string }, user: { id: string; role: UserRole }) {
+  async scanSeal(data: { identifier: string; parcelId: string; signature?: string; condition: SealCondition; transitPointId?: string; imageUrl?: string; comments?: string }, user: { id: string; role: UserRole }) {
     const seal = await this.prisma.parcelSeal.findUnique({ where: { identifier: data.identifier } });
-    const mismatch = !seal || seal.parcelId !== data.parcelId;
+    const expectedSignature = seal ? createHmac('sha256', seal.signedData).update(`${data.parcelId}:${data.identifier}`).digest('hex') : '';
+    const signatureMatches = !!seal && !!data.signature && data.signature.length === expectedSignature.length && timingSafeEqual(Buffer.from(data.signature), Buffer.from(expectedSignature));
+    const mismatch = !seal || seal.parcelId !== data.parcelId || !signatureMatches;
     const condition = mismatch ? SealCondition.QR_MISMATCH : data.condition;
     const parcel = await this.prisma.parcel.findUnique({ where: { id: data.parcelId } });
     if (!parcel) throw new NotFoundException('Parcel not found');
@@ -667,20 +903,26 @@ export class OperationsService {
   async generateForecast() {
     const start = new Date();
     start.setDate(start.getDate() - 28);
-    const grouped = await this.prisma.parcel.groupBy({ by: ['deliveryAddress'], where: { createdAt: { gte: start } }, _count: true });
-    const usable = grouped.filter((row) => row._count >= 4);
+    const history = await this.prisma.parcel.findMany({ where: { createdAt: { gte: start } }, select: { deliveryAddress: true, createdAt: true } });
+    const grouped = new Map<string, number[]>();
+    for (const parcel of history) {
+      const weeksAgo = Math.min(3, Math.floor((Date.now() - parcel.createdAt.getTime()) / (7 * 86_400_000)));
+      const counts = grouped.get(parcel.deliveryAddress) ?? [0, 0, 0, 0];
+      counts[3 - weeksAgo]++;
+      grouped.set(parcel.deliveryAddress, counts);
+    }
+    const usable = [...grouped.entries()].filter(([, counts]) => counts.reduce((sum, value) => sum + value, 0) >= 4);
     if (!usable.length) return { generated: 0, forecasts: [], message: 'Insufficient history: at least four parcels per destination in the last 28 days are required' };
     const periodStart = new Date();
     const periodEnd = new Date(Date.now() + 7 * 86_400_000);
-    const forecasts = await Promise.all(usable.map((row) => this.prisma.demandForecast.create({
+    await this.prisma.demandForecast.deleteMany({ where: { periodStart: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } } });
+    const forecasts = await Promise.all(usable.map(([destination, counts]) => this.prisma.demandForecast.create({
       data: {
-        destination: row.deliveryAddress,
+        destination,
         periodStart,
         periodEnd,
-        predictedVolume: Math.ceil(row._count / 4),
-        confidence: Math.min(0.95, 0.5 + row._count / 100),
-        recommendedCapacity: Math.ceil((row._count / 4) * 1.2),
-        model: 'four-week-moving-average-v1',
+        ...forecastWeeklyVolume(counts),
+        model: 'four-week-recency-weighted-v2',
       },
     })));
     return { generated: forecasts.length, forecasts };

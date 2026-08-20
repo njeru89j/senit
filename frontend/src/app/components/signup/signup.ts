@@ -85,7 +85,7 @@ export class Signup implements OnInit {
     this.signupData.role = 'CUSTOMER';
 
     // Validate form
-    if (!this.signupData.name || !this.signupData.email || !this.signupData.password) {
+    if (!this.signupData.name || !this.signupData.email || !this.signupData.password || !this.signupData.phone) {
       this.toastService.showError('Please fill in all required fields');
       return;
     }
@@ -105,6 +105,11 @@ export class Signup implements OnInit {
     // Validate name
     if (this.signupData.name.trim().length < 2) {
       this.toastService.showError('Name must be at least 2 characters long');
+      return;
+    }
+
+    if (!/^\d{10}$/.test(this.signupData.phone)) {
+      this.toastService.showError('Phone number must contain exactly 10 digits');
       return;
     }
 

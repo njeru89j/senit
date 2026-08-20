@@ -244,4 +244,8 @@ export class DriversGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }) {
     this.server.to('admin-room').to(`user-${statusData.driverId}`).emit('parcelStatusUpdate', statusData);
   }
+
+  broadcastNotification(userId: string, notification: unknown) {
+    this.server.to(`user-${userId}`).emit('notificationCreated', notification);
+  }
 }

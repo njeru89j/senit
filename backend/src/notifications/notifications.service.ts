@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma, Notification } from '@prisma/client';
+import { DriversGateway } from '../drivers/drivers.gateway';
 import {
   CreateNotificationDto,
   NotificationResponseDto,
@@ -12,7 +13,7 @@ import {
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly gateway: DriversGateway) {}
 
   // Create a new notification
   async create(
@@ -38,7 +39,9 @@ export class NotificationsService {
       },
     });
 
-    return this.mapToNotificationResponse(notification);
+    const response = this.mapToNotificationResponse(notification);
+    this.gateway.broadcastNotification(notification.userId, response);
+    return response;
   }
 
   // Get notifications for a user

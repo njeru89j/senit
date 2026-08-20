@@ -58,13 +58,15 @@ export const routes: Routes = [
     { path: 'parcel-details/:id', component: DriverParcelDetails, canActivate: [AuthGuard], data: { roles: ['DRIVER'] } },
   ]},
   { path: 'transit-officer', children: [
-    { path: 'dashboard', component: TransitWorkspace, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
+    { path: 'dashboard', component: AdminDashboard, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
     { path: 'create-delivery', component: CreateDelivery, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
     { path: 'manage-parcels', component: ManageParcels, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
-    { path: 'batches', component: TransitWorkspace, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
-    { path: 'lockers', component: TransitWorkspace, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
-    { path: 'enroute', component: TransitWorkspace, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
-    { path: 'manage-lockers', component: TransitWorkspace, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
+    { path: 'parcel-details/:id', component: AdminParcelDetails, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
+    { path: 'operations', component: Operations, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'], initialTab: 'batches' } },
+    { path: 'batches', component: Operations, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'], initialTab: 'batches' } },
+    { path: 'lockers', component: Operations, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'], initialTab: 'lockers' } },
+    { path: 'enroute', component: Operations, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'], initialTab: 'batches' } },
+    { path: 'manage-lockers', component: Operations, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'], initialTab: 'lockers' } },
   ]},
   
   // Profile route - protected for all authenticated users

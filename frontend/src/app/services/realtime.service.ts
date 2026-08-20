@@ -46,11 +46,13 @@ export class RealtimeService {
   private driverLocationSubject = new Subject<DriverLocation>();
   private driverAssignmentSubject = new Subject<DriverAssignment>();
   private parcelStatusSubject = new Subject<ParcelStatusUpdate>();
+  private notificationSubject = new Subject<any>();
 
   // Observables
   public driverLocationUpdates$ = this.driverLocationSubject.asObservable();
   public driverAssignmentUpdates$ = this.driverAssignmentSubject.asObservable();
   public parcelStatusUpdates$ = this.parcelStatusSubject.asObservable();
+  public notificationUpdates$ = this.notificationSubject.asObservable();
 
   constructor(private authService: AuthService) {}
 
@@ -141,6 +143,7 @@ export class RealtimeService {
       console.log('📦 Parcel status update received:', data);
       this.parcelStatusSubject.next(data);
     });
+    this.socket.on('notificationCreated', (data: any) => this.notificationSubject.next(data));
 
     // Listen for confirmation messages
     this.socket.on('locationUpdated', (data: any) => {

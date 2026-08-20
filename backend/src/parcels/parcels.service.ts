@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { Prisma, Parcel, User } from '@prisma/client';
+import { Prisma, Parcel, ParcelStatus, User } from '@prisma/client';
 import {
   CreateParcelDto,
   UpdateParcelDto,
@@ -19,6 +19,9 @@ import { UserResponseDto } from '../users/dto';
 import { MailerService } from '../mailer/mailer.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DELIVERY_FEE_CONFIG } from '../common/constants';
+import { canTransitionParcel } from '../common/parcel-lifecycle';
+import { createHmac, randomBytes } from 'crypto';
+import * as QRCode from 'qrcode';
 
 @Injectable()
 export class ParcelsService {
@@ -30,11 +33,47 @@ export class ParcelsService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
+  private normalizePlace(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  private async determineRoute(pickupTransitPointId: string, destination: string): Promise<string> {
+    const [pickup, routes, memberships, points] = await Promise.all([
+      this.prisma.transitPoint.findFirst({ where: { id: pickupTransitPointId, active: true } }),
+      this.prisma.route.findMany({ where: { active: true } }),
+      this.prisma.routeTransitPoint.findMany({ orderBy: [{ routeId: 'asc' }, { sequence: 'asc' }] }),
+      this.prisma.transitPoint.findMany({ where: { active: true } }),
+    ]);
+    if (!pickup) throw new BadRequestException('Selected pickup transit point is not available');
+    const pointById = new Map(points.map((point) => [point.id, point]));
+    const target = this.normalizePlace(destination);
+    const routeLocations = routes.map((route) => ({
+      route,
+      locations: [route.origin, ...memberships.filter((item) => item.routeId === route.id).map((item) => pointById.get(item.transitPointId)?.name).filter((name): name is string => !!name), route.destination],
+    }));
+    const queue: Array<{ place: string; firstRouteId?: string }> = [{ place: pickup.name }];
+    const visited = new Set<string>();
+    while (queue.length) {
+      const current = queue.shift()!;
+      const normalized = this.normalizePlace(current.place);
+      if (visited.has(normalized)) continue;
+      visited.add(normalized);
+      if ((normalized === target || normalized.includes(target) || target.includes(normalized)) && current.firstRouteId) return current.firstRouteId;
+      for (const entry of routeLocations) {
+        const index = entry.locations.findIndex((place) => this.normalizePlace(place) === normalized);
+        if (index < 0) continue;
+        for (const next of entry.locations.slice(index + 1)) queue.push({ place: next, firstRouteId: current.firstRouteId ?? entry.route.id });
+      }
+    }
+    throw new BadRequestException(`No interconnected active route was found from ${pickup.name} to ${destination}`);
+  }
+
   private async getTransitOfficerParcelScope(
     officerId: string,
   ): Promise<Prisma.ParcelWhereInput> {
+    const assignments = await this.prisma.transitPointOfficer.findMany({ where: { officerId }, select: { transitPointId: true } });
     const points = await this.prisma.transitPoint.findMany({
-      where: { officerId, active: true },
+      where: { id: { in: assignments.map((item) => item.transitPointId) }, active: true },
       select: { id: true, name: true },
     });
     const pointIds = points.map((point) => point.id);
@@ -75,11 +114,34 @@ export class ParcelsService {
       pickupAddress,
       deliveryAddress,
       routeId,
+      pickupTransitPointId,
+      destinationTransitPointId,
+      requestLockerOnConfirmation,
       weight,
       description,
       value,
       deliveryInstructions,
     } = createParcelDto;
+
+    if (userRole === 'TRANSIT_OFFICER' && userId) {
+      const assignment = await this.prisma.transitPointOfficer.findUnique({ where: { officerId: userId } });
+      if (!assignment) throw new BadRequestException('Your account is not assigned to an active transit point');
+      pickupTransitPointId = assignment.transitPointId;
+    }
+
+    if (destinationTransitPointId) {
+      const destinationPoint = await this.prisma.transitPoint.findFirst({
+        where: { id: destinationTransitPointId, active: true },
+        select: { name: true },
+      });
+      if (!destinationPoint) throw new BadRequestException('Selected destination transit point is not available');
+      deliveryAddress = destinationPoint.name;
+    }
+
+    if (pickupTransitPointId) {
+      routeId = await this.determineRoute(pickupTransitPointId, deliveryAddress);
+      pickupAddress = (await this.prisma.transitPoint.findUnique({ where: { id: pickupTransitPointId }, select: { name: true } }))?.name ?? pickupAddress;
+    }
 
     if (routeId) {
       const route = await this.prisma.route.findFirst({
@@ -109,6 +171,13 @@ export class ParcelsService {
       senderPhone = customer.phone;
     }
 
+    if (!/^\d{10}$/.test(senderPhone)) {
+      throw new BadRequestException('Sender phone number must contain exactly 10 digits');
+    }
+    if (!/^\d{10}$/.test(recipientPhone)) {
+      throw new BadRequestException('Recipient phone number must contain exactly 10 digits');
+    }
+
     // Generate unique tracking number
     const trackingNumber = await this.generateTrackingNumber();
 
@@ -132,10 +201,14 @@ export class ParcelsService {
       this.logger.warn(`Failed to check if recipient is registered: ${error}`);
     }
 
-    // Create parcel
-    const parcel = await this.prisma.parcel.create({
-      data: {
+    // Confirm the order and issue its security seal atomically.
+    const sealIdentifier = `SEAL-${randomBytes(12).toString('hex')}`;
+    const signedData = randomBytes(32).toString('hex');
+    const { parcel, qrValue } = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.parcel.create({
+        data: {
         trackingNumber,
+        qrSealIdentifier: sealIdentifier,
         senderId: userId,
         recipientId: recipientId, // Set recipientId if recipient is registered
         senderName,
@@ -154,11 +227,17 @@ export class ParcelsService {
         deliveryFee,
         status: 'created',
       },
-      include: {
-        sender: true,
-        recipient: true,
-        driver: true,
-      },
+        include: { sender: true, recipient: true, driver: true },
+      });
+      const signature = createHmac('sha256', signedData).update(`${created.id}:${sealIdentifier}`).digest('hex');
+      const qrPayload = JSON.stringify({ type: 'SENDIT_SEAL', parcelId: created.id, identifier: sealIdentifier, signature });
+      await tx.parcelSeal.create({ data: { parcelId: created.id, identifier: sealIdentifier, signedData, createdBy: userId ?? created.id } });
+      const lockerRequester = recipientId ?? userId;
+      if (requestLockerOnConfirmation && lockerRequester) {
+        await tx.lockerRequest.create({ data: { parcelId: created.id, requestedBy: lockerRequester, size: 'MEDIUM' } });
+      }
+      await tx.auditLog.create({ data: { userId, action: 'PARCEL_CREATED_WITH_SECURITY_SEAL', entityType: 'Parcel', entityId: created.id, after: { identifier: sealIdentifier } } });
+      return { parcel: created, qrValue: qrPayload };
     });
 
     // Send parcel creation email to sender
@@ -273,7 +352,10 @@ export class ParcelsService {
       );
     }
 
-    return this.mapToParcelResponse(parcel);
+    return {
+      ...this.mapToParcelResponse(parcel),
+      securitySeal: { identifier: sealIdentifier, qrValue, qrDataUrl: await QRCode.toDataURL(qrValue, { errorCorrectionLevel: 'H', margin: 1, width: 360 }) },
+    };
   }
 
   // Find all parcels with filtering
@@ -1097,13 +1179,20 @@ export class ParcelsService {
         route = routeRecord ? { ...routeRecord, transitPoints: memberships.map((item) => ({ sequence: item.sequence, ...byId.get(item.transitPointId) })) } : null;
       }
     }
+    let lockerDetails: any = null;
+    if (locker) {
+      const compartment = await this.prisma.lockerCompartment.findUnique({ where: { id: locker.compartmentId } });
+      const station = compartment ? await this.prisma.lockerStation.findUnique({ where: { id: compartment.stationId } }) : null;
+      const collection = await this.prisma.collectionCode.findFirst({ where: { lockerAssignmentId: locker.id, usedAt: null }, orderBy: { createdAt: 'desc' } });
+      lockerDetails = { id: locker.id, assignedAt: locker.assignedAt, collectedAt: locker.collectedAt, compartmentNo: compartment?.compartmentNo, size: compartment?.size, stationName: station?.name, stationAddress: station?.address, expiresAt: collection?.expiresAt };
+    }
 
     return {
       parcel,
       timeline: history,
       batch: batch ? { id: batch.id, batchNumber: batch.batchNumber, status: batch.status } : null,
       route,
-      locker: locker ? { id: locker.id, assignedAt: locker.assignedAt, collectedAt: locker.collectedAt } : null,
+      locker: lockerDetails,
       security: {
         seal: seal ? { identifier: seal.identifier, active: seal.active, createdAt: seal.createdAt } : null,
         scans: scans.map((scan) => ({ condition: scan.condition, transitPointId: scan.transitPointId, createdAt: scan.createdAt })),
@@ -1769,34 +1858,7 @@ export class ParcelsService {
     currentStatus: string,
     newStatus: string,
   ): boolean {
-    const validTransitions: Record<string, string[]> = {
-      created: ['pending', 'assigned', 'cancelled'],
-      awaiting_confirmation: ['pending', 'cancelled'],
-      awaiting_driver_assignment: ['assigned', 'cancelled'],
-      pending: ['assigned', 'cancelled'],
-      // The driver dashboard's "Start Delivery" action moves an assigned
-      // parcel directly into transit. Picking it up remains available as an
-      // explicit intermediate state for workflows that use it.
-      assigned: ['collected', 'cancelled'],
-      collected: ['cancelled'], // physical departure is batch-controlled
-      picked_up: ['in_transit', 'delivered_to_recipient', 'cancelled'],
-      in_transit: ['delivered_to_recipient', 'cancelled'],
-      arrived_at_transit_point: ['in_transit', 'out_for_delivery', 'locker_assigned', 'cancelled'],
-      at_transit_point: ['cancelled'], // onward movement is batch-controlled
-      at_destination: ['out_for_delivery', 'in_locker', 'delivered_to_recipient', 'cancelled'],
-      at_origin_transit_point: ['in_transit', 'cancelled'],
-      out_for_delivery: ['delivered_to_recipient', 'locker_assigned', 'delivery_unsuccessful'],
-      locker_assigned: ['ready_for_locker_collection', 'cancelled'],
-      ready_for_locker_collection: ['collected_from_locker', 'cancelled'],
-      in_locker: ['delivered', 'cancelled'],
-      collected_from_locker: ['delivered', 'completed'],
-      delivered_to_recipient: ['delivered', 'cancelled'],
-      delivered: ['completed', 'cancelled'],
-      completed: [], // Final state - can only be reached after customer marks as complete
-      cancelled: [], // Final state
-    };
-
-    return validTransitions[currentStatus]?.includes(newStatus) || false;
+    return canTransitionParcel(currentStatus as ParcelStatus, newStatus as ParcelStatus);
   }
 
   // Helper method to map parcel status to notification type

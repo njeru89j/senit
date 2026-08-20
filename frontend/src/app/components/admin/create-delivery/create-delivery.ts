@@ -16,11 +16,8 @@ import { OperationsService } from '../../../services/operations.service';
 function phoneNumberValidator(control: AbstractControl): ValidationErrors | null {
   if (!control.value) return null;
   
-  // Remove all non-digit characters
-  const digitsOnly = control.value.replace(/\D/g, '');
-  
-  if (digitsOnly.length < 10 || digitsOnly.length > 15) {
-    return { phoneNumber: { message: 'Phone number must contain 10 to 15 digits' } };
+  if (!/^\d{10}$/.test(control.value)) {
+    return { phoneNumber: { message: 'Phone number must contain exactly 10 digits' } };
   }
   
   return null;
@@ -67,6 +64,7 @@ interface OrderDetails {
   destination: string;
   totalPrice: number;
   parcelWeight: number;
+  estimatedValue?: number;
   pricePerKg: number;
   senderAddress?: string;
   senderEmail?: string;
@@ -130,6 +128,8 @@ export class CreateDelivery implements OnInit {
   savedRoutes: any[] = [];
   selectedPickupRouteId = '';
   selectedPickupTransitPointId = '';
+  selectedDestinationTransitPointId = '';
+  assignedOriginTransitPoint: any = null;
   selectedDestinationRouteId = '';
 
   constructor(
@@ -156,7 +156,9 @@ export class CreateDelivery implements OnInit {
       pickupLocation: ['', [Validators.required, Validators.minLength(3)]],
       destination: ['', [Validators.required, Validators.minLength(3)]],
       parcelWeight: ['', [Validators.required, Validators.min(0.1), Validators.max(1000)]],
-      pricePerKg: [this.pricePerKg, [Validators.required, Validators.min(0.01)]]
+      estimatedValue: ['', [Validators.required, Validators.min(1), Validators.max(100000)]],
+      pricePerKg: [this.pricePerKg, [Validators.required, Validators.min(0.01)]],
+      requestLockerOnConfirmation: [false]
     }, { validators: senderRecipientValidator });
 
     // Listen to parcel weight changes to calculate total price
@@ -180,9 +182,10 @@ export class CreateDelivery implements OnInit {
   }
 
   ngOnInit() {
-    this.loadSavedRoutes();
     const currentUser = this.authService.getCurrentUser();
     this.userRole = currentUser?.role || '';
+    this.loadSavedRoutes();
+    if (this.userRole === 'TRANSIT_OFFICER') this.loadAssignedOriginTransitPoint();
     if (this.userRole === 'CUSTOMER' && currentUser) {
       this.deliveryForm.patchValue({
         senderName: currentUser.name,
@@ -219,9 +222,29 @@ export class CreateDelivery implements OnInit {
   }
 
   private loadSavedRoutes(): void {
-    this.operationsService.routes().subscribe({
+    // Delivery destinations must include the complete interconnected network,
+    // not only the routes visible in an officer's operational workspace.
+    this.operationsService.publicRoutes().subscribe({
       next: (routes) => this.savedRoutes = routes || [],
       error: () => this.savedRoutes = []
+    });
+  }
+
+  private loadAssignedOriginTransitPoint(): void {
+    this.operationsService.transitPoints().subscribe({
+      next: points => {
+        const point = (points || [])[0];
+        if (!point) {
+          this.toastService.showError('Your account has no nominated transit point');
+          return;
+        }
+        this.assignedOriginTransitPoint = point;
+        this.selectedPickupTransitPointId = point.id;
+        this.deliveryForm.patchValue({ pickupLocation: point.name });
+        this.pickupCoordinates = { lat: point.latitude, lng: point.longitude };
+        this.updateMapMarkers();
+      },
+      error: () => this.toastService.showError('Could not load your assigned transit point'),
     });
   }
 
@@ -239,17 +262,20 @@ export class CreateDelivery implements OnInit {
   }
 
   get pickupTransitPoints(): any[] {
-    const route = this.savedRoutes.find(item => item.id === this.selectedPickupRouteId);
-    return (route?.transitPoints ?? []).map((entry: any) => entry.transitPoint ?? entry).filter((point: any) => point.active);
+    const byId = new Map<string, any>();
+    this.savedRoutes.flatMap(route => route.transitPoints ?? []).map((entry: any) => entry.transitPoint ?? entry).filter((point: any) => point.active).forEach((point: any) => byId.set(point.id, point));
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   onPickupRouteChange(event: Event): void {
     this.selectedPickupRouteId = (event.target as HTMLSelectElement).value;
-    this.selectedPickupTransitPointId = '';
-    const route = this.savedRoutes.find(item => item.id === this.selectedPickupRouteId);
+    this.selectedPickupTransitPointId = this.userRole === 'TRANSIT_OFFICER'
+      ? this.assignedOriginTransitPoint?.id || ''
+      : '';
+    this.selectedDestinationTransitPointId = '';
     this.deliveryForm.patchValue({
-      pickupLocation: '',
-      destination: route?.destination || '',
+      pickupLocation: this.userRole === 'TRANSIT_OFFICER' ? this.assignedOriginTransitPoint?.name || '' : '',
+      destination: '',
     });
     this.pickupCoordinates = null;
     this.destinationCoordinates = null;
@@ -267,6 +293,14 @@ export class CreateDelivery implements OnInit {
     this.deliveryForm.patchValue({ pickupLocation: point.name });
     if (typeof point.latitude === 'number' && typeof point.longitude === 'number') this.pickupCoordinates = { lat: point.latitude, lng: point.longitude };
     this.showPickupSuggestions = false;
+    this.updateMapMarkers();
+  }
+
+  onDestinationTransitPointChange(event: Event): void {
+    this.selectedDestinationTransitPointId = (event.target as HTMLSelectElement).value;
+    const point = this.pickupTransitPoints.find(item => item.id === this.selectedDestinationTransitPointId);
+    this.deliveryForm.patchValue({ destination: point?.name || '' });
+    this.destinationCoordinates = point && typeof point.latitude === 'number' ? { lat: point.latitude, lng: point.longitude } : null;
     this.updateMapMarkers();
   }
 
@@ -678,6 +712,7 @@ export class CreateDelivery implements OnInit {
       pickupLocation: orderDetails.pickupLocation || '',
       destination: orderDetails.destination || '',
       parcelWeight: orderDetails.parcelWeight || '',
+      estimatedValue: orderDetails.estimatedValue || '',
       pricePerKg: orderDetails.pricePerKg || this.pricePerKg
     });
 
@@ -727,8 +762,8 @@ export class CreateDelivery implements OnInit {
 
   isDeliveryTabValid(): boolean {
     const deliveryFields = this.userRole === 'CUSTOMER'
-      ? ['recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'pricePerKg']
-      : ['senderName', 'senderContact', 'senderEmail', 'recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'pricePerKg'];
+      ? ['recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'estimatedValue', 'pricePerKg']
+      : ['senderName', 'senderContact', 'senderEmail', 'recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'estimatedValue', 'pricePerKg'];
     
     return deliveryFields.every(field => {
       const control = this.deliveryForm.get(field);
@@ -742,7 +777,8 @@ export class CreateDelivery implements OnInit {
     return trackingFields.every(field => {
       const control = this.deliveryForm.get(field);
       return control && control.valid && control.value;
-    }) && !!this.pickupCoordinates && !!this.destinationCoordinates;
+    }) && !!this.selectedPickupTransitPointId && !!this.selectedDestinationTransitPointId
+      && !!this.pickupCoordinates && !!this.destinationCoordinates;
   }
 
   onSubmit() {
@@ -768,10 +804,12 @@ export class CreateDelivery implements OnInit {
         recipientPhone: formData.recipientContact,
         pickupAddress: formData.pickupLocation,
         deliveryAddress: formData.destination,
-        routeId: this.selectedPickupRouteId || undefined,
+        pickupTransitPointId: this.selectedPickupTransitPointId,
+        destinationTransitPointId: this.selectedDestinationTransitPointId,
+        requestLockerOnConfirmation: !!formData.requestLockerOnConfirmation,
         weight: formData.parcelWeight,
         description: `Delivery from ${formData.pickupLocation} to ${formData.destination}`,
-        value: this.totalPrice,
+        value: formData.estimatedValue,
         deliveryInstructions: `Estimated distance: ${this.routeDistance} km, Estimated time: ${this.routeEstimatedTime} minutes`
       };
       
@@ -799,6 +837,7 @@ export class CreateDelivery implements OnInit {
               deliveryAddress: formData.destination,
               weight: formData.parcelWeight,
               price: this.totalPrice,
+              value: formData.estimatedValue,
               pickupLat: this.pickupCoordinates?.lat,
               pickupLng: this.pickupCoordinates?.lng,
               deliveryLat: this.destinationCoordinates?.lat,
@@ -823,6 +862,7 @@ export class CreateDelivery implements OnInit {
                 destination: formData.destination,
                 totalPrice: this.totalPrice,
                 parcelWeight: formData.parcelWeight,
+                estimatedValue: formData.estimatedValue,
                 pricePerKg: this.pricePerKg,
                 senderAddress: '', // No longer stored in orderDetails
                 senderEmail: formData.senderEmail,
@@ -955,6 +995,7 @@ export class CreateDelivery implements OnInit {
       pickupLocation: 'Pickup location',
       destination: 'Destination',
       parcelWeight: 'Parcel weight',
+      estimatedValue: 'Estimated parcel value',
       pricePerKg: 'Price per kilogram'
     };
     return labels[fieldName] || fieldName;

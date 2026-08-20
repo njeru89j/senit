@@ -18,6 +18,7 @@ export interface WelcomeEmailData {
 
 export interface PasswordResetEmailData {
   to: string;
+  email: string;
   name: string;
   profilePicture?: string;
   resetToken: string;
@@ -254,6 +255,7 @@ export class MailerService {
       this.logger.log(`Debug - Name: "${data.name}", ProfilePicture: "${data.profilePicture}"`);
 
       const context = {
+        email: data.email,
         name: data.name,
         profilePicture: data.profilePicture,
         resetToken: data.resetToken,

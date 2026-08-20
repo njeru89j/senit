@@ -64,6 +64,7 @@ export class ParcelDetails implements OnInit {
   
   parcelId: string = '';
   parcel: ParcelDetailsData | null = null;
+  trackingOverview: any = null;
   loading = false;
 
   // Map-related properties
@@ -117,6 +118,7 @@ export class ParcelDetails implements OnInit {
     
     // Get the parcel ID from the URL parameter
     const parcelId = this.parcelId.replace('#', ''); // Remove # from parcel ID if present
+    this.parcelsService.getTrackingOverview(parcelId).subscribe({ next: overview => this.trackingOverview = overview, error: () => this.trackingOverview = null });
     
     // Check if we have parcel details from navigation state
     const navigation = this.router.getCurrentNavigation();

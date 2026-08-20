@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { Prisma } from '@prisma/client';
+import { ParcelStatus, Prisma } from '@prisma/client';
 import {
   UpdateLocationDto,
   DriverApplicationDto,
@@ -16,6 +16,7 @@ import {
 } from '../users/dto';
 import { DriversGateway } from './drivers.gateway';
 import { MailerService } from '../mailer/mailer.service';
+import { assertParcelTransition } from '../common/parcel-lifecycle';
 
 interface DriverPerformanceResponse {
   driverId: string;
@@ -565,31 +566,16 @@ export class DriversService {
       throw new NotFoundException('Parcel not found or not assigned to you');
     }
 
-    if (parcel.status !== 'assigned' || status !== 'collected') {
-      throw new BadRequestException('Drivers may only confirm ASSIGNED to COLLECTED. Route movement is controlled by batches.');
-    }
+    const collecting = parcel.status === ParcelStatus.assigned && status === ParcelStatus.collected;
+    const departing = parcel.status === ParcelStatus.collected && status === ParcelStatus.in_transit;
+    try { assertParcelTransition(parcel.status, status as ParcelStatus); } catch { throw new BadRequestException('Confirm collection first, then mark the parcel in transit when it leaves'); }
+    if (!collecting && !departing) throw new BadRequestException('Drivers may only confirm collection and departure');
 
-    // Collection is the only driver-controlled physical movement state.
-    const updatedParcel = await this.prisma.parcel.update({
-      where: { id: parcelId },
-      data: {
-        status: 'collected',
-        currentLocation: currentLocation || parcel.pickupAddress,
-        actualPickupTime: parcel.actualPickupTime ?? new Date(),
-        latitude,
-        longitude,
-      },
-    });
-
-    // Create status history entry
-    await this.prisma.parcelStatusHistory.create({
-      data: {
-        parcelId,
-        status: 'collected',
-        location: currentLocation || parcel.pickupAddress,
-        updatedBy: driverId,
-        notes: notes || 'Parcel physically collected from sender',
-      },
+    const location = currentLocation || parcel.currentLocation || parcel.pickupAddress;
+    const updatedParcel = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.parcel.update({ where: { id: parcelId }, data: { status, currentLocation: location, actualPickupTime: collecting ? parcel.actualPickupTime ?? new Date() : parcel.actualPickupTime, latitude, longitude } });
+      await tx.parcelStatusHistory.create({ data: { parcelId, status, location, updatedBy: driverId, notes: notes || (collecting ? 'Parcel physically collected from sender' : 'Parcel departed and is in transit') } });
+      return updated;
     });
 
     // Broadcast parcel status update via WebSocket
@@ -597,14 +583,14 @@ export class DriversService {
       parcelId,
       driverId,
       status,
-      location: currentLocation,
+      location,
       timestamp: new Date(),
     });
 
     this.logger.log(`Parcel ${parcelId} status updated to ${status} by driver ${driverId}`);
 
     return {
-      message: `Parcel status updated to ${status}`,
+      message: collecting ? 'Parcel collection confirmed' : 'Parcel departed and is now in transit',
       parcel: updatedParcel,
     };
   }

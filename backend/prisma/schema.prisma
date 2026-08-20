@@ -100,9 +100,9 @@ model Parcel {
   recipientPhone String // Always stored
 
   // Driver assignment
-  driverId   String? // Optional: assigned driver
-  assignedAt DateTime? // When parcel was assigned to driver
-  routeId    String? // Confirmed movement route
+  driverId              String? // Optional: assigned driver
+  assignedAt            DateTime? // When parcel was assigned to driver
+  routeId               String? // Confirmed movement route
   currentTransitPointId String?
 
   pickupAddress        String
@@ -376,15 +376,15 @@ model DriverDocument {
 }
 
 model ParcelAssignment {
-  id             String           @id @default(cuid())
-  parcelId       String
-  driverId       String
-  assignedBy     String
-  status         AssignmentStatus @default(ASSIGNED)
-  assignedAt     DateTime         @default(now())
-  acknowledgedAt DateTime?
-  completedAt    DateTime?
-  rejectedAt     DateTime?
+  id              String           @id @default(cuid())
+  parcelId        String
+  driverId        String
+  assignedBy      String
+  status          AssignmentStatus @default(ASSIGNED)
+  assignedAt      DateTime         @default(now())
+  acknowledgedAt  DateTime?
+  completedAt     DateTime?
+  rejectedAt      DateTime?
   rejectionReason String?
 
   @@index([parcelId])
@@ -432,6 +432,18 @@ model RouteTransitPoint {
   @@unique([routeId, transitPointId])
   @@unique([routeId, sequence])
   @@map("route_transit_points")
+}
+
+model TransitPointOfficer {
+  id             String   @id @default(cuid())
+  transitPointId String
+  officerId      String   @unique
+  nominatedBy    String?
+  nominatedAt    DateTime @default(now())
+
+  @@unique([transitPointId, officerId])
+  @@index([transitPointId])
+  @@map("transit_point_officers")
 }
 
 model Batch {
@@ -494,19 +506,19 @@ model TransitInspection {
 }
 
 model LockerStation {
-  id           String   @id @default(cuid())
-  name         String   @unique
-  address      String
+  id             String   @id @default(cuid())
+  name           String   @unique
+  address        String
   transitPointId String?
-  latitude     Float
-  longitude    Float
-  openingHours String?
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  latitude       Float
+  longitude      Float
+  openingHours   String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  @@map("locker_stations")
   @@index([transitPointId])
+  @@map("locker_stations")
 }
 
 model LockerCompartment {
@@ -538,18 +550,35 @@ model LockerAssignment {
 }
 
 model LockerRequest {
-  id          String   @id @default(cuid())
+  id          String     @id @default(cuid())
   parcelId    String
   requestedBy String
   stationId   String?
   size        LockerSize @default(MEDIUM)
-  status      String   @default("PENDING")
+  status      String     @default("PENDING")
   reviewedBy  String?
   reviewedAt  DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime   @default(now())
+
   @@index([parcelId, status])
   @@index([status, createdAt])
   @@map("locker_requests")
+}
+
+model LockerExtensionRequest {
+  id                 String    @id @default(cuid())
+  lockerAssignmentId String
+  requestedBy        String
+  requestedMinutes   Int
+  reason             String?
+  status             String    @default("PENDING")
+  reviewedBy         String?
+  reviewedAt         DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([lockerAssignmentId, status])
+  @@index([status, createdAt])
+  @@map("locker_extension_requests")
 }
 
 model CollectionCode {

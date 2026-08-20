@@ -89,8 +89,18 @@ export class AdminService {
   private async getTransitOfficerParcelScope(
     officerId: string,
   ): Promise<Prisma.ParcelWhereInput> {
+    const nominations = await this.prisma.transitPointOfficer.findMany({
+      where: { officerId },
+      select: { transitPointId: true },
+    });
     const points = await this.prisma.transitPoint.findMany({
-      where: { officerId, active: true },
+      where: {
+        active: true,
+        OR: [
+          { officerId },
+          { id: { in: nominations.map((item) => item.transitPointId) } },
+        ],
+      },
       select: { id: true, name: true },
     });
     const pointIds = points.map((point) => point.id);
@@ -369,6 +379,9 @@ export class AdminService {
         },
         take: 5,
         include: {
+          driverProfile: {
+            select: { routesServed: true, currentRouteId: true },
+          },
           _count: {
             select: {
               assignedParcels: true,
@@ -623,6 +636,9 @@ export class AdminService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
+          driverProfile: {
+            select: { routesServed: true, currentRouteId: true },
+          },
           _count: {
             select: {
               sentParcels: true,
@@ -1254,6 +1270,9 @@ export class AdminService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
+          driverProfile: {
+            select: { routesServed: true, currentRouteId: true },
+          },
           _count: {
             select: {
               assignedParcels: true,
@@ -1266,7 +1285,11 @@ export class AdminService {
     ]);
 
     return {
-      drivers: drivers.map((driver) => this.mapToUserResponse(driver)),
+      drivers: drivers.map((driver) => ({
+        ...this.mapToUserResponse(driver),
+        routesServed: driver.driverProfile?.routesServed ?? [],
+        currentRouteId: driver.driverProfile?.currentRouteId ?? undefined,
+      })),
       total,
       page,
       limit,

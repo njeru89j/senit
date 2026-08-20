@@ -1,6 +1,7 @@
 const PLACEHOLDER_VALUES = [
   '',
   'your-email@gmail.com',
+  'your-email-password',
   'your-app-password',
   'replace-with-a-long-random-secret',
   'replace-with-a-different-long-random-secret',

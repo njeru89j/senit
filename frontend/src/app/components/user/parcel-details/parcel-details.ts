@@ -245,6 +245,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
   private driverLocationSubscription: Subscription | null = null;
   lockerRequestBusy = false;
   lockerCollectionCode = '';
+  lockerExtensionHours = 12;
 
   constructor(
     private route: ActivatedRoute,
@@ -389,6 +390,25 @@ export class ParcelDetails implements OnInit, OnDestroy {
     this.operationsService.requestLocker({ parcelId: this.parcel.id, size: 'MEDIUM' }).subscribe({
       next: () => { this.lockerRequestBusy = false; this.toastService.showSuccess('Locker request sent to the admin. You will receive a collection code when it is approved.'); },
       error: (error: any) => { this.lockerRequestBusy = false; this.toastService.showError(error.error?.message ?? 'Could not request a locker'); }
+    });
+  }
+
+  requestLockerExtension(): void {
+    const assignmentId = this.trackingOverview?.locker?.id;
+    if (!assignmentId) return;
+    this.lockerRequestBusy = true;
+    this.operationsService.requestLockerExtension(assignmentId, this.lockerExtensionHours * 60).subscribe({
+      next: () => { this.lockerRequestBusy = false; this.toastService.showSuccess('Locker time extension request submitted'); },
+      error: () => { this.lockerRequestBusy = false; },
+    });
+  }
+
+  collectAtTransitPoint(): void {
+    if (!this.parcel) return;
+    this.lockerRequestBusy = true;
+    this.operationsService.transitPickup(this.parcel.id).subscribe({
+      next: () => { this.lockerRequestBusy = false; this.toastService.showSuccess('Parcel collection completed.'); this.loadParcelFromApi(); },
+      error: (error: any) => { this.lockerRequestBusy = false; this.toastService.showError(error.error?.message ?? 'Could not complete collection'); }
     });
   }
 

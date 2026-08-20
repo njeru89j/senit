@@ -64,39 +64,9 @@ export class AuthService {
         this.SALT_ROUNDS,
       );
 
-      const selectedRole = createUserDto.role && Object.values(UserRole).includes(createUserDto.role as UserRole)
-        ? (createUserDto.role as UserRole)
-        : UserRole.CUSTOMER;
-
-      const preferredRoutes = Array.isArray(createUserDto.routesServed)
-        ? [...new Set(createUserDto.routesServed.filter(Boolean))]
-        : [];
-      let currentRouteId = createUserDto.currentRouteId?.trim() || undefined;
-
-      if (selectedRole === UserRole.DRIVER) {
-        if (preferredRoutes.length > 3) {
-          throw new Error('A driver can select up to 3 preferred routes');
-        }
-
-        const validRoutes = await this.prisma.route.findMany({
-          where: {
-            id: { in: preferredRoutes },
-            active: true,
-          },
-          select: { id: true },
-        });
-
-        const validRouteIds = validRoutes.map((route) => route.id);
-        if (preferredRoutes.length > 0 && validRouteIds.length !== preferredRoutes.length) {
-          throw new Error('One or more selected preferred routes are invalid');
-        }
-
-        if (currentRouteId && !validRouteIds.includes(currentRouteId)) {
-          throw new Error('Current route must be one of the selected preferred routes');
-        }
-
-        currentRouteId = currentRouteId || validRouteIds[0];
-      }
+      // Public registration always creates a customer. Driver and staff roles
+      // are granted only through authenticated administrative workflows.
+      const selectedRole = UserRole.CUSTOMER;
 
       // Create user with specified role or default to CUSTOMER
       const userData = {
@@ -122,22 +92,7 @@ export class AuthService {
         data: userData,
       });
 
-      let driverProfile: { routesServed?: string[]; currentRouteId?: string | null } | null = null;
-      if (selectedRole === UserRole.DRIVER) {
-        await this.prisma.driverProfile.upsert({
-          where: { userId: user.id },
-          create: {
-            userId: user.id,
-            routesServed: preferredRoutes,
-            currentRouteId,
-          },
-          update: {
-            routesServed: preferredRoutes,
-            currentRouteId,
-          },
-        });
-        driverProfile = { routesServed: preferredRoutes, currentRouteId };
-      }
+      const driverProfile = null;
 
       // Link any anonymous parcels to the new user
       let linkedParcelsMessage = '';
@@ -471,6 +426,7 @@ export class AuthService {
         // Reuse existing token if it's still valid
         await this.mailerService.sendPasswordResetEmail({
           to: email,
+          email,
           name: user.name,
           profilePicture: user.profilePicture || undefined,
           resetToken: existingToken.token,
@@ -508,6 +464,7 @@ export class AuthService {
       // Send email with token
       await this.mailerService.sendPasswordResetEmail({
         to: email,
+        email,
         name: user.name,
         profilePicture: user.profilePicture || undefined,
         resetToken: resetToken,

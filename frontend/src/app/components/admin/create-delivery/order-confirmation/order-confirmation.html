@@ -91,6 +91,13 @@
             </div>
           </div>
 
+          <div class="code-card" *ngIf="securitySeal">
+            <span>Security seal generated with this order</span>
+            <img [src]="securitySeal.qrDataUrl" alt="Parcel security seal QR code" style="width: 220px; max-width: 100%; background: white; padding: 8px" />
+            <strong>{{ securitySeal.identifier }}</strong>
+            <small>Print and attach this signed seal before the parcel is collected.</small>
+          </div>
+
           <!-- Edit Mode -->
           <form *ngIf="isEditMode" [formGroup]="editForm" class="edit-form">
             <div class="form-grid">

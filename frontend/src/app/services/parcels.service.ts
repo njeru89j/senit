@@ -55,6 +55,7 @@ export interface Parcel {
   statusHistory?: any[];
   reviews?: any[];
   deliveryProof?: any;
+  securitySeal?: { identifier: string; qrValue: string; qrDataUrl: string };
 }
 
 export interface ParcelsResponse {
@@ -74,6 +75,9 @@ export interface CreateParcelDto {
   pickupAddress: string;
   deliveryAddress: string;
   routeId?: string;
+  pickupTransitPointId?: string;
+  destinationTransitPointId?: string;
+  requestLockerOnConfirmation?: boolean;
   weight: number;
   description?: string;
   value?: number;

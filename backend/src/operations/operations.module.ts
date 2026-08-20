@@ -4,9 +4,10 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { OperationsController, PublicOperationsController } from './operations.controller';
 import { OperationsService } from './operations.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SendITMailerModule } from '../mailer/mailer.module';
 
 @Module({
-  imports: [AuthModule, NotificationsModule],
+  imports: [AuthModule, NotificationsModule, SendITMailerModule],
   controllers: [OperationsController, PublicOperationsController],
   providers: [OperationsService, RolesGuard],
   exports: [OperationsService],

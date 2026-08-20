@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink, Router } from '@angular/router';
+import { RouterLink, Router, ActivatedRoute } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { ToastService } from '../shared/toast/toast.service';
 import { AuthService } from '../../services/auth.service';
@@ -33,8 +33,17 @@ export class Reset {
   constructor(
     private toastService: ToastService,
     private router: Router,
+    private route: ActivatedRoute,
     private authService: AuthService
-  ) {}
+  ) {
+    const email = this.route.snapshot.queryParamMap.get('email') || '';
+    const token = this.route.snapshot.queryParamMap.get('token') || '';
+    if (email && /^\d{6}$/.test(token)) {
+      this.resetData.email = email;
+      this.resetData.verificationCode = token;
+      this.currentStep = 3;
+    }
+  }
 
   togglePassword() {
     this.showPassword = !this.showPassword;

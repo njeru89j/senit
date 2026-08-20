@@ -15,10 +15,11 @@ export const registerSchema = Joi.object({
     'any.required': 'Name is required',
   }),
   phone: Joi.string()
-    .pattern(/^\+?[\d\s\-()]+$/)
-    .optional()
+    .pattern(/^\d{10}$/)
+    .required()
     .messages({
-      'string.pattern.base': 'Please provide a valid phone number',
+      'string.pattern.base': 'Phone number must contain exactly 10 digits',
+      'any.required': 'Phone number is required',
     }),
   address: Joi.string().max(200).optional().messages({
     'string.max': 'Address cannot exceed 200 characters',

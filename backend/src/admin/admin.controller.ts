@@ -51,22 +51,26 @@ export class AdminController {
 
   // Dashboard and Statistics
   @Get('dashboard/stats')
+  @Roles('ADMIN', 'TRANSIT_OFFICER')
   async getDashboardStats(@Request() req: AuthenticatedRequest) {
     return this.adminService.getDashboardStats(this.currentUser(req));
   }
 
   @Get('dashboard/system-stats')
+  @Roles('ADMIN', 'TRANSIT_OFFICER')
   async getSystemStats(@Request() req: AuthenticatedRequest) {
     return this.adminService.getSystemStats(this.currentUser(req));
   }
 
   @Get('analytics')
+  @Roles('ADMIN')
   async getAnalyticsData(@Request() req: AuthenticatedRequest) {
     return this.adminService.getAnalyticsData(this.currentUser(req));
   }
 
   // User Management
   @Get('users')
+  @Roles('ADMIN')
   @UsePipes(new ValidationPipe({ transform: true }))
   async findAllUsers(
     @Query() query: UserFilterDto,
@@ -76,11 +80,13 @@ export class AdminController {
   }
 
   @Get('users/all-for-dropdown')
+  @Roles('ADMIN')
   async getAllUsersForDropdown() {
     return this.adminService.getAllUsersForDropdown();
   }
 
   @Get('users/test-suspended-inclusion')
+  @Roles('ADMIN')
   async testSuspendedUserInclusion() {
     const result = await this.adminService.getAllUsersForDropdown();
     const suspendedUsers = result.users.filter(user => !user.isActive);
@@ -102,6 +108,7 @@ export class AdminController {
   }
 
   @Get('users/debug-all-users')
+  @Roles('ADMIN')
   async debugAllUsers() {
     return this.adminService.debugAllUsers();
   }
@@ -199,26 +206,31 @@ export class AdminController {
   }
 
   @Get('users/:id')
+  @Roles('ADMIN')
   async findUserById(@Param('id') id: string) {
     return this.adminService.findUserById(id);
   }
 
   @Get('users/:id/parcels')
+  @Roles('ADMIN')
   async getUserParcels(@Param('id') id: string) {
     return this.adminService.getUserParcels(id);
   }
 
   @Get('users/:id/activity')
+  @Roles('ADMIN')
   async getUserActivity(@Param('id') id: string) {
     return this.adminService.getUserActivity(id);
   }
 
   @Get('users/:id/driver-data')
+  @Roles('ADMIN')
   async getDriverComprehensiveData(@Param('id') id: string) {
     return this.adminService.getDriverComprehensiveData(id);
   }
 
   @Patch('users/:id/manage')
+  @Roles('ADMIN')
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async manageUser(
     @Param('id') userId: string,
@@ -228,6 +240,7 @@ export class AdminController {
   }
 
   @Patch('users/:id/reactivate')
+  @Roles('ADMIN')
   async reactivateUser(@Param('id') userId: string) {
     return this.adminService.manageUser(userId, {
       userId,
@@ -243,6 +256,7 @@ export class AdminController {
   }
 
   @Patch('drivers/:id/manage')
+  @Roles('ADMIN')
   async manageDriver(
     @Param('id') driverId: string,
     @Body() managementDto: DriverManagementDto,
@@ -252,11 +266,13 @@ export class AdminController {
 
   // Driver Applications
   @Get('driver-applications')
+  @Roles('ADMIN')
   async getDriverApplications(@Query() query: DriverApplicationFilterDto) {
     return this.adminService.getDriverApplications(query);
   }
 
   @Patch('driver-applications/:id/manage')
+  @Roles('ADMIN')
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async manageDriverApplication(
     @Param('id') userId: string,

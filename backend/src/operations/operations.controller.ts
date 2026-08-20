@@ -52,41 +52,53 @@ export class OperationsController {
   @Get('batches') @Roles('ADMIN', 'DRIVER', 'TRANSIT_OFFICER')
   batches(@Request() req: AuthRequest) { return this.service.listBatches(this.user(req)); }
   @Get('batches/:id') @Roles('ADMIN', 'DRIVER', 'TRANSIT_OFFICER')
-  batch(@Param('id') id: string) { return this.service.getBatch(id); }
+  batch(@Param('id') id: string, @Request() req: AuthRequest) { return this.service.getBatch(id, this.user(req)); }
   @Post('batches/:id/events') @Roles('ADMIN', 'DRIVER')
-  batchEvent(@Param('id') id: string, @Body() body: any, @Request() req: AuthRequest) { return this.service.recordBatchEvent(id, body, this.user(req).id); }
+  batchEvent(@Param('id') id: string, @Body() body: any, @Request() req: AuthRequest) { return this.service.recordBatchEvent(id, body, this.user(req)); }
   @Post('batches/:id/load') @Roles('ADMIN', 'DRIVER')
-  loadBatch(@Param('id') id: string, @Body('parcelIds') parcelIds: string[], @Request() req: AuthRequest) { return this.service.confirmBatchLoad(id, parcelIds, this.user(req).id); }
+  loadBatch(@Param('id') id: string, @Body('parcelIds') parcelIds: string[], @Request() req: AuthRequest) { return this.service.confirmBatchLoad(id, parcelIds, this.user(req)); }
   @Post('batches/:id/remove/:parcelId') @Roles('ADMIN')
   removeFromBatch(@Param('id') id: string, @Param('parcelId') parcelId: string, @Body('reason') reason: string, @Request() req: AuthRequest) { return this.service.removeFromBatch(id, parcelId, this.user(req).id, reason); }
   @Post('batches/:id/split') @Roles('ADMIN')
   splitBatch(@Param('id') id: string, @Body('groups') groups: any[], @Request() req: AuthRequest) { return this.service.splitBatch(id, groups, this.user(req).id); }
 
-  @Post('lockers/stations') @Roles('ADMIN', 'TRANSIT_OFFICER')
+  @Post('lockers/stations') @Roles('ADMIN')
   createStation(@Body() body: any, @Request() req: AuthRequest) { return this.service.createLockerStation(body, this.user(req).id); }
   @Get('lockers/stations') @Roles('ADMIN', 'TRANSIT_OFFICER')
   lockerStations(@Request() req: AuthRequest) { return this.service.listLockerStations(this.user(req)); }
   @Post('lockers/compartments') @Roles('ADMIN', 'TRANSIT_OFFICER')
   addCompartment(@Body() body: any, @Request() req: AuthRequest) { const user = this.user(req); return this.service.addCompartment(body, user.id, user.role); }
   @Patch('lockers/compartments/:id') @Roles('ADMIN', 'TRANSIT_OFFICER')
-  updateCompartment(@Param('id') id: string, @Body() body: any, @Request() req: AuthRequest) { return this.service.updateLockerCompartment(id, body, this.user(req).id); }
+  updateCompartment(@Param('id') id: string, @Body() body: any, @Request() req: AuthRequest) { const user = this.user(req); return this.service.updateLockerCompartment(id, body, user.id, user.role); }
   @Post('lockers/compartments/:id/delete') @Roles('ADMIN', 'TRANSIT_OFFICER')
-  deleteCompartment(@Param('id') id: string, @Request() req: AuthRequest) { return this.service.deleteLockerCompartment(id, this.user(req).id); }
+  deleteCompartment(@Param('id') id: string, @Request() req: AuthRequest) { const user = this.user(req); return this.service.deleteLockerCompartment(id, user.id, user.role); }
   @Post('lockers/compartments/:id/deactivate') @Roles('ADMIN', 'TRANSIT_OFFICER')
-  deactivateCompartment(@Param('id') id: string, @Request() req: AuthRequest) { return this.service.deactivateLockerCompartment(id, this.user(req).id); }
+  deactivateCompartment(@Param('id') id: string, @Request() req: AuthRequest) { const user = this.user(req); return this.service.deactivateLockerCompartment(id, user.id, user.role); }
   @Post('lockers/assign') @Roles('ADMIN', 'TRANSIT_OFFICER')
-  assignLocker(@Body() body: any, @Request() req: AuthRequest) { return this.service.assignLocker(body, this.user(req).id); }
+  assignLocker(@Body() body: any, @Request() req: AuthRequest) { const user = this.user(req); return this.service.assignLocker(body, user.id, user.role); }
   @Post('lockers/requests') @Roles('CUSTOMER')
   requestLocker(@Body() body: any, @Request() req: AuthRequest) { return this.service.requestLocker(body, this.user(req).id); }
   @Get('lockers/requests') @Roles('ADMIN', 'TRANSIT_OFFICER')
-  lockerRequests() { return this.service.listLockerRequests(); }
+  lockerRequests(@Request() req: AuthRequest) { return this.service.listLockerRequests(this.user(req)); }
   @Post('lockers/requests/:id/approve') @Roles('ADMIN', 'TRANSIT_OFFICER')
-  approveLockerRequest(@Param('id') id: string, @Body() body: any, @Request() req: AuthRequest) { return this.service.approveLockerRequest(id, body, this.user(req).id); }
+  approveLockerRequest(@Param('id') id: string, @Body() body: any, @Request() req: AuthRequest) { const user = this.user(req); return this.service.approveLockerRequest(id, body, user.id, user.role); }
   @Post('lockers/requests/:id/reject') @Roles('ADMIN', 'TRANSIT_OFFICER')
-  rejectLockerRequest(@Param('id') id: string, @Request() req: AuthRequest) { return this.service.rejectLockerRequest(id, this.user(req).id); }
+  rejectLockerRequest(@Param('id') id: string, @Request() req: AuthRequest) { const user = this.user(req); return this.service.rejectLockerRequest(id, user.id, user.role); }
+  @Post('lockers/:id/extension-requests') @Roles('CUSTOMER')
+  requestLockerExtension(@Param('id') id: string, @Body() body: any, @Request() req: AuthRequest) { return this.service.requestLockerExtension(id, +body.requestedMinutes, body.reason, this.user(req).id); }
+  @Get('lockers/extension-requests') @Roles('ADMIN', 'TRANSIT_OFFICER')
+  lockerExtensionRequests(@Request() req: AuthRequest) { return this.service.listLockerExtensionRequests(this.user(req)); }
+  @Post('lockers/extension-requests/:id/approve') @Roles('ADMIN', 'TRANSIT_OFFICER')
+  approveLockerExtension(@Param('id') id: string, @Request() req: AuthRequest) { const user = this.user(req); return this.service.reviewLockerExtension(id, true, user.id, user.role); }
+  @Post('lockers/extension-requests/:id/reject') @Roles('ADMIN', 'TRANSIT_OFFICER')
+  rejectLockerExtension(@Param('id') id: string, @Request() req: AuthRequest) { const user = this.user(req); return this.service.reviewLockerExtension(id, false, user.id, user.role); }
   @Post('lockers/:id/collect')
   @Roles('CUSTOMER', 'ADMIN')
   collectLocker(@Param('id') id: string, @Body('code') code: string, @Request() req: AuthRequest) { return this.service.collectFromLocker(id, code, this.user(req)); }
+  @Post('lockers/:id/regenerate-code') @Roles('ADMIN', 'TRANSIT_OFFICER')
+  regenerateLockerCode(@Param('id') id: string, @Body('expiresInMinutes') minutes: number, @Request() req: AuthRequest) { const user = this.user(req); return this.service.regenerateLockerCode(id, user.id, minutes, user.role); }
+  @Post('lockers/expire') @Roles('ADMIN')
+  expireLockers() { return this.service.expireLockerAssignments(); }
   @Post('parcels/:id/direct-delivery') @Roles('ADMIN', 'DRIVER')
   directDelivery(@Param('id') id: string, @Request() req: AuthRequest) { return this.service.completeDirectDelivery(id, this.user(req)); }
   @Post('parcels/:id/transit-pickup') @Roles('CUSTOMER', 'ADMIN')
@@ -95,7 +107,7 @@ export class OperationsController {
   @Post('seals/:parcelId') @Roles('ADMIN')
   createSeal(@Param('parcelId') parcelId: string, @Request() req: AuthRequest) { return this.service.createSeal(parcelId, this.user(req).id); }
   @Post('seals/scan') @Roles('ADMIN', 'DRIVER')
-  scanSeal(@Body() body: { identifier: string; parcelId: string; condition: SealCondition }, @Request() req: AuthRequest) { return this.service.scanSeal(body, this.user(req)); }
+  scanSeal(@Body() body: { identifier: string; parcelId: string; signature?: string; condition: SealCondition }, @Request() req: AuthRequest) { return this.service.scanSeal(body, this.user(req)); }
   @Get('seals/parcel/:parcelId') @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
   parcelSecurity(@Param('parcelId') parcelId: string, @Request() req: AuthRequest) { return this.service.parcelSecurity(parcelId, this.user(req)); }
 

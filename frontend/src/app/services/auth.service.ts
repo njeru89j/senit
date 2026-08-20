@@ -20,7 +20,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  phone?: string;
+  phone: string;
   address?: string;
   profilePicture?: string;
   role: 'CUSTOMER' | 'DRIVER' | 'ADMIN' | 'TRANSIT_OFFICER';

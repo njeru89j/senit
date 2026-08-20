@@ -64,6 +64,18 @@
         </div>
 
         <!-- Sender Information -->
+        <div class="section" *ngIf="trackingOverview?.locker">
+          <h2 class="section-title">Smart Locker</h2>
+          <div class="contact-info">
+            <div class="info-item"><label>Station:</label><span>{{ trackingOverview.locker.stationName }}</span></div>
+            <div class="info-item"><label>Address:</label><span>{{ trackingOverview.locker.stationAddress }}</span></div>
+            <div class="info-item"><label>Locker number:</label><span>{{ trackingOverview.locker.compartmentNo }}</span></div>
+            <div class="info-item"><label>Size:</label><span>{{ trackingOverview.locker.size | titlecase }}</span></div>
+            <div class="info-item"><label>Collection deadline:</label><span>{{ trackingOverview.locker.expiresAt | date:'medium' }}</span></div>
+          </div>
+        </div>
+
+        <!-- Sender Information -->
         <div class="section" style="animation-delay: 0.2s;">
           <h2 class="section-title">Sender Information</h2>
           <div class="contact-info">

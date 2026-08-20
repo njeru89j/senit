@@ -52,7 +52,7 @@ export class SidebarComponent implements OnInit, AfterViewInit, OnDestroy {
       icon: 'fas fa-tachometer-alt', // dashboard icon
       label: 'Dashboard',
       route: '',
-      roles: ['ADMIN', 'CUSTOMER', 'DRIVER'],
+      roles: ['ADMIN', 'CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER'],
     },
     // Admin-specific items
     {
@@ -99,18 +99,9 @@ export class SidebarComponent implements OnInit, AfterViewInit, OnDestroy {
       route: '/driver/history',
       roles: ['DRIVER'],
     },
-    {
-      icon: 'fas fa-route',
-      label: 'Transit operations',
-      route: '/transit-officer/dashboard',
-      roles: ['TRANSIT_OFFICER'],
-    },
-    { icon: 'fas fa-plus-circle', label: 'Create Delivery', route: '/transit-officer/create-delivery', roles: ['TRANSIT_OFFICER'] },
+    { icon: 'fas fa-truck-loading', label: 'Create Delivery', route: '/transit-officer/create-delivery', roles: ['TRANSIT_OFFICER'] },
     { icon: 'fas fa-box', label: 'Manage Parcels', route: '/transit-officer/manage-parcels', roles: ['TRANSIT_OFFICER'] },
-    { icon: 'fas fa-boxes', label: 'Batches', route: '/transit-officer/batches', roles: ['TRANSIT_OFFICER'] },
-    { icon: 'fas fa-lock', label: 'Assign Locker', route: '/transit-officer/lockers', roles: ['TRANSIT_OFFICER'] },
-    { icon: 'fas fa-exchange-alt', label: 'En-route Delivery', route: '/transit-officer/enroute', roles: ['TRANSIT_OFFICER'] },
-    { icon: 'fas fa-th', label: 'Manage Lockers', route: '/transit-officer/manage-lockers', roles: ['TRANSIT_OFFICER'] },
+    { icon: 'fas fa-route', label: 'Operations', route: '/transit-officer/operations', roles: ['TRANSIT_OFFICER'] },
     // Common profile for all
     {
       icon: 'fas fa-user', // profile icon, not circle

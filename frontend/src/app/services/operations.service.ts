@@ -43,10 +43,15 @@ export class OperationsService {
   approveLockerRequest(id: string, data: any) { return this.http.post<any>(`${this.base}/lockers/requests/${id}/approve`, data); }
   rejectLockerRequest(id: string) { return this.http.post(`${this.base}/lockers/requests/${id}/reject`, {}); }
   collectLocker(id: string, code: string) { return this.http.post(`${this.base}/lockers/${id}/collect`, { code }); }
+  requestLockerExtension(id: string, requestedMinutes: number, reason?: string) { return this.http.post(`${this.base}/lockers/${id}/extension-requests`, { requestedMinutes, reason }); }
+  lockerExtensionRequests() { return this.http.get<any[]>(`${this.base}/lockers/extension-requests`); }
+  approveLockerExtension(id: string) { return this.http.post(`${this.base}/lockers/extension-requests/${id}/approve`, {}); }
+  rejectLockerExtension(id: string) { return this.http.post(`${this.base}/lockers/extension-requests/${id}/reject`, {}); }
   directDelivery(parcelId: string) { return this.http.post(`${this.base}/parcels/${parcelId}/direct-delivery`, {}); }
   transitPickup(parcelId: string) { return this.http.post(`${this.base}/parcels/${parcelId}/transit-pickup`, {}); }
   createSeal(parcelId: string) { return this.http.post<any>(`${this.base}/seals/${parcelId}`, {}); }
   scanSeal(data: any) { return this.http.post<any>(`${this.base}/seals/scan`, data); }
+  regenerateLockerCode(id: string, expiresInMinutes = 1440) { return this.http.post<any>(`${this.base}/lockers/${id}/regenerate-code`, { expiresInMinutes }); }
   parcelSecurity(parcelId: string) { return this.http.get<any>(`${this.base}/seals/parcel/${parcelId}`); }
   alerts() { return this.http.get<any[]>(`${this.base}/alerts`); }
   resolveAlert(id: string, data: any) { return this.http.patch(`${this.base}/alerts/${id}`, data); }

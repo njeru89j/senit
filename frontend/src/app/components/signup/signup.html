@@ -70,13 +70,18 @@
 
 
           <div class="form-group">
-            <label for="phone">Phone Number</label>
+            <label for="phone">Phone Number *</label>
             <input 
               type="tel" 
               id="phone" 
               name="phone" 
               [(ngModel)]="signupData.phone" 
-              placeholder="Enter your phone number"
+              required
+              inputmode="numeric"
+              pattern="[0-9]{10}"
+              minlength="10"
+              maxlength="10"
+              placeholder="e.g. 0712345678"
               [disabled]="isLoading"
             >
           </div>

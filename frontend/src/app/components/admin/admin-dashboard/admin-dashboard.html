@@ -6,8 +6,7 @@
 
   <!-- Main Content -->
   <main class="main-content">
-    <!-- Access Control - Only Admin Users -->
-    <div *ngIf="userRole === 'ADMIN'">
+    <div *ngIf="userRole === 'ADMIN' || userRole === 'TRANSIT_OFFICER'">
       <div class="content-header">
         <div class="header-left">
           <h1 class="dashboard-title">Welcome back, <span class="highlight">{{ currentUser?.name || 'Admin' }}!</span></h1>
@@ -22,7 +21,7 @@
           <i class="fas fa-chart-line"></i>
           Overview
         </button>
-        <button class="tab-button" [class.active]="activeTab === 'analytics'" (click)="switchTab('analytics')">
+        <button *ngIf="userRole === 'ADMIN'" class="tab-button" [class.active]="activeTab === 'analytics'" (click)="switchTab('analytics')">
           <i class="fas fa-chart-bar"></i>
           Analytics
         </button>
@@ -53,15 +52,15 @@
         <div class="quick-actions">
           <h2>Quick Actions</h2>
           <div class="action-buttons">
-            <button routerLink="/admin-create-delivery" class="action-btn primary">
+            <button [routerLink]="userRole === 'TRANSIT_OFFICER' ? '/transit-officer/create-delivery' : '/admin-create-delivery'" class="action-btn primary">
               <i class="fas fa-plus"></i>
               <span>Create Delivery</span>
             </button>
-            <button routerLink="/admin-manage-parcels" class="action-btn primary">
+            <button [routerLink]="userRole === 'TRANSIT_OFFICER' ? '/transit-officer/manage-parcels' : '/admin-manage-parcels'" class="action-btn primary">
               <i class="fas fa-box"></i>
               <span>Manage Parcels</span>
             </button>
-            <button routerLink="/admin/operations" class="action-btn primary">
+            <button [routerLink]="userRole === 'TRANSIT_OFFICER' ? '/transit-officer/operations' : '/admin/operations'" class="action-btn primary">
               <i class="fas fa-route"></i>
               <span>Operations, Lockers & Batches</span>
             </button>

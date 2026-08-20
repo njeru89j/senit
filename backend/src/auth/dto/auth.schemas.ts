@@ -15,28 +15,20 @@ export const registerSchema = Joi.object({
     'any.required': 'Name is required',
   }),
   phone: Joi.string()
-    .pattern(/^\+?[\d\s\-()]+$/)
-    .optional()
+    .pattern(/^\d{10}$/)
+    .required()
     .messages({
-      'string.pattern.base': 'Please provide a valid phone number',
+      'string.pattern.base': 'Phone number must contain exactly 10 digits',
+      'any.required': 'Phone number is required',
     }),
   address: Joi.string().max(200).optional().messages({
     'string.max': 'Address cannot exceed 200 characters',
-  }),
-  role: Joi.string().valid('CUSTOMER', 'DRIVER', 'ADMIN').optional().messages({
-    'any.only': 'Role must be CUSTOMER, DRIVER, or ADMIN',
-  }),
-  routesServed: Joi.array().items(Joi.string().trim().min(1)).max(3).optional().messages({
-    'array.max': 'A driver can select up to 3 routes',
-  }),
-  currentRouteId: Joi.string().trim().min(1).optional().messages({
-    'string.min': 'Current route is required when provided',
   }),
 })
   .unknown(false);
 
 export const loginSchema = Joi.object({
-  email: Joi.string().email().required().messages({
+  email: Joi.string().email({ tlds: { allow: false } }).required().messages({
     'string.email': 'Please provide a valid email address',
     'any.required': 'Email is required',
   }),

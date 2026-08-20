@@ -1,4 +1,5 @@
 import { Transform } from 'class-transformer';
+import { ParcelStatus } from '@prisma/client';
 import {
   IsOptional,
   IsString,
@@ -160,18 +161,34 @@ export class DriverFilterDto {
 }
 
 export class ParcelFilterDto {
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
   page?: number = 1;
+
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
   limit?: number = 10;
+
+  @IsOptional()
+  @IsString()
   search?: string;
-  status?:
-    | 'pending'
-    | 'assigned'
-    | 'picked_up'
-    | 'in_transit'
-    | 'delivered'
-    | 'cancelled';
+
+  @IsOptional()
+  @IsEnum(ParcelStatus)
+  status?: ParcelStatus;
+
+  @IsOptional()
+  @IsString()
   assignedDriverId?: string;
+
+  @IsOptional()
+  @IsString()
   dateFrom?: string;
+
+  @IsOptional()
+  @IsString()
   dateTo?: string;
 }
 

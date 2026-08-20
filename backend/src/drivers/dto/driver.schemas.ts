@@ -25,10 +25,10 @@ export const updateDriverProfileSchema = Joi.object({
     'string.max': 'Name cannot exceed 50 characters',
   }),
   phone: Joi.string()
-    .pattern(/^\+?[\d\s\-()]+$/)
+    .pattern(/^\d{10}$/)
     .optional()
     .messages({
-      'string.pattern.base': 'Please provide a valid phone number',
+      'string.pattern.base': 'Phone number must contain exactly 10 digits',
     }),
   vehicleNumber: Joi.string().max(20).optional().messages({
     'string.max': 'Vehicle number cannot exceed 20 characters',
@@ -53,11 +53,11 @@ export const changePasswordSchema = Joi.object({
 
 export const updateParcelStatusSchema = Joi.object({
   status: Joi.string()
-    .valid('collected')
+    .valid('collected', 'in_transit')
     .required()
     .messages({
       'any.only':
-        'Drivers may only confirm parcel collection',
+        'Drivers may only confirm parcel collection or departure',
       'any.required': 'Status is required',
     }),
   currentLocation: Joi.string().max(200).optional().messages({

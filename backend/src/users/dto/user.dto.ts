@@ -3,7 +3,7 @@ export interface CreateUserDto {
   email: string;
   password: string;
   name: string;
-  phone?: string;
+  phone: string;
   address?: string;
   role?: 'CUSTOMER' | 'DRIVER' | 'ADMIN';
   profilePicture?: string;
@@ -157,7 +157,7 @@ export interface AssignParcelDto {
 }
 
 export interface UpdateParcelStatusDto {
-  status: 'collected';
+  status: 'collected' | 'in_transit';
   currentLocation?: string;
   latitude?: number;
   longitude?: number;

@@ -6,6 +6,7 @@ import { SidebarComponent } from '../../shared/sidebar/sidebar';
 import { ParcelsService, ParcelQueryDto } from '../../../services/parcels.service';
 import { ToastService } from '../../shared/toast/toast.service';
 import { Parcel } from '../../../services/base-api.service';
+import { AuthService } from '../../../services/auth.service';
 
 @Component({
   selector: 'app-manage-parcels',
@@ -30,9 +31,11 @@ export class ManageParcels implements OnInit {
   constructor(
     private router: Router,
     private parcelsService: ParcelsService,
-    private toastService: ToastService
+    private toastService: ToastService,
+    private authService: AuthService,
   ) {} 
   ngOnInit() {
+    this.userRole = this.authService.getCurrentUser()?.role || 'ADMIN';
     this.loadParcels();
   }
 
@@ -92,7 +95,7 @@ export class ManageParcels implements OnInit {
   }
 
   viewDetails(parcelId: string) {
-    this.router.navigate(['/admin-parcel-details', parcelId]);
+    this.router.navigate([this.userRole === 'TRANSIT_OFFICER' ? '/transit-officer/parcel-details' : '/admin-parcel-details', parcelId]);
   }
 
   createNewParcel() {

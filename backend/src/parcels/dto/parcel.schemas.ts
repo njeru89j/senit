@@ -40,19 +40,24 @@ export const createParcelSchema = Joi.object({
     'string.base': 'Recipient ID must be a string',
   }),
 
-  pickupAddress: Joi.string().min(10).max(200).required().messages({
-    'string.min': 'Pickup address must be at least 10 characters long',
+  pickupAddress: Joi.string().min(2).max(200).required().messages({
+    'string.min': 'Pickup transit point must be at least 2 characters long',
     'string.max': 'Pickup address cannot exceed 200 characters',
     'any.required': 'Pickup address is required',
   }),
-  deliveryAddress: Joi.string().min(10).max(200).required().messages({
-    'string.min': 'Delivery address must be at least 10 characters long',
+  deliveryAddress: Joi.string().min(2).max(200).required().messages({
+    'string.min': 'Destination transit point must be at least 2 characters long',
     'string.max': 'Delivery address cannot exceed 200 characters',
     'any.required': 'Delivery address is required',
   }),
   routeId: Joi.string().trim().min(1).optional().messages({
     'string.min': 'Route is required when provided',
   }),
+  pickupTransitPointId: Joi.string().trim().required().messages({
+    'any.required': 'Pickup transit point is required',
+  }),
+  destinationTransitPointId: Joi.string().trim().optional(),
+  requestLockerOnConfirmation: Joi.boolean().optional(),
   weight: Joi.number().positive().max(1000).required().messages({
     'number.base': 'Weight must be a number',
     'number.positive': 'Weight must be positive',

@@ -5,6 +5,7 @@ import { catchError, tap } from 'rxjs/operators';
 import { AuthService } from './auth.service';
 import { ToastService } from '../components/shared/toast/toast.service';
 import { environment } from '../../environments/environment';
+import { RealtimeService } from './realtime.service';
 
 export interface Notification {
   id: string;
@@ -72,8 +73,16 @@ export class NotificationService {
   constructor(
     private http: HttpClient,
     private authService: AuthService,
-    private toastService: ToastService
+    private toastService: ToastService,
+    private realtimeService: RealtimeService
   ) {
+    this.realtimeService.notificationUpdates$.subscribe((notification: Notification) => {
+      const current = this.notificationsSubject.value;
+      if (!current.some(item => item.id === notification.id)) this.notificationsSubject.next([notification, ...current].slice(0, 20));
+      this.unreadCountSubject.next(this.unreadCountSubject.value + 1);
+      this.toastService.showSuccess(notification.title);
+      this.showBrowserNotification(notification);
+    });
     // Initialize notifications when user is authenticated
     this.authService.isAuthenticated$.subscribe(isAuth => {
       if (isAuth) {
@@ -87,6 +96,19 @@ export class NotificationService {
         this.clearNotifications();
       }
     });
+  }
+
+  private async showBrowserNotification(notification: Notification) {
+    if (!('Notification' in window)) return;
+    let permission = Notification.permission;
+    if (permission === 'default') permission = await Notification.requestPermission();
+    if (permission !== 'granted' || document.visibilityState === 'visible') return;
+    const alert = new Notification(notification.title, { body: notification.message, tag: notification.id });
+    alert.onclick = () => {
+      window.focus();
+      if (notification.actionUrl) window.location.assign(notification.actionUrl);
+      alert.close();
+    };
   }
 
   private getHeaders(): { [key: string]: string } {

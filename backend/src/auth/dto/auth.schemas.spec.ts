@@ -5,7 +5,7 @@ describe('registerSchema', () => {
     email: 'customer@example.com',
     password: 'SecurePass123!',
     name: 'Test Customer',
-    phone: '+254700000000',
+    phone: '0700000000',
   };
 
   it('accepts a standard customer registration', () => {
@@ -13,6 +13,12 @@ describe('registerSchema', () => {
 
     expect(result.error).toBeUndefined();
     expect(result.value).toEqual(validRegistration);
+  });
+
+  it('requires a phone number containing exactly 10 digits', () => {
+    expect(registerSchema.validate({ ...validRegistration, phone: undefined }).error).toBeDefined();
+    expect(registerSchema.validate({ ...validRegistration, phone: '070000000' }).error).toBeDefined();
+    expect(registerSchema.validate({ ...validRegistration, phone: '07000-00000' }).error).toBeDefined();
   });
 
   it.each(['ADMIN', 'DRIVER'])('rejects a public %s role request', (role) => {

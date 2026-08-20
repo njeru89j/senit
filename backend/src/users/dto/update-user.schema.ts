@@ -8,7 +8,8 @@ export const updateUserSchema = Joi.object({
   email: Joi.string().email().optional().messages({
     'string.email': 'Please provide a valid email address',
   }),
-  phone: Joi.string().optional().messages({
+  phone: Joi.string().pattern(/^\d{10}$/).optional().messages({
+    'string.pattern.base': 'Phone number must contain exactly 10 digits',
     'string.base': 'Phone must be a string',
   }),
   address: Joi.string().max(200).optional().messages({

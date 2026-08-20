@@ -51,6 +51,7 @@ export class OrderConfirmation implements OnInit, OnDestroy {
   originalOrderDetails: OrderDetails | null = null;
   expectedDeliveryDate: string = '';
   parcelDetails: any = null;
+  securitySeal: { identifier: string; qrValue: string; qrDataUrl: string } | null = null;
   
   // Map properties
   private map: L.Map | null = null;
@@ -144,6 +145,7 @@ export class OrderConfirmation implements OnInit, OnDestroy {
       if (state['createdParcel']) {
         // Update order details with the created parcel info
         this.orderDetails.parcelId = state['createdParcel'].id;
+        this.securitySeal = state['createdParcel'].securitySeal ?? null;
         console.log('🎯 Created parcel info:', state['createdParcel']);
       } else {
         console.warn('⚠️ No createdParcel found in state');

@@ -204,6 +204,26 @@
               {{ getFieldError('parcelWeight') }}
             </div>
           </div>
+
+          <div class="form-group">
+            <label for="estimatedValue">Estimated Value of Parcel (KSH)</label>
+            <div class="input-with-icon">
+              <input
+                type="number"
+                id="estimatedValue"
+                formControlName="estimatedValue"
+                placeholder="Enter estimated parcel value"
+                step="1"
+                min="1"
+                max="100000"
+                [class.error]="isFieldInvalid('estimatedValue')"
+              >
+              <span class="currency-symbol">KSH</span>
+            </div>
+            <div class="error-message" *ngIf="getFieldError('estimatedValue')">
+              {{ getFieldError('estimatedValue') }}
+            </div>
+          </div>
           
           <div class="form-group">
             <label for="pricePerKg">Price per Kilogram</label>
@@ -276,24 +296,25 @@
             
             <div class="location-grid">
                           <div class="form-group address-input-group">
-  <label for="pickupRoute">Route</label>
+  <label for="pickupRoute" hidden>Route</label>
   <div class="address-input-container"><select id="pickupRoute" [value]="selectedPickupRouteId" (change)="onPickupRouteChange($event)"><option value="">Select route first</option><option *ngFor="let route of savedRoutes" [value]="route.id">{{route.name || (route.origin + ' → ' + route.destination)}}</option></select><i class="fas fa-route location-icon pickup-icon"></i></div>
 </div>
 <div class="form-group address-input-group">
-  <label for="pickupLocation">Pickup Transit Point</label>
-  <div class="address-input-container"><select id="pickupLocation" [value]="selectedPickupTransitPointId" (change)="onPickupTransitPointChange($event)" [disabled]="!selectedPickupRouteId" [class.error]="isFieldInvalid('pickupLocation')"><option value="">Select transit point</option><option *ngFor="let point of pickupTransitPoints" [value]="point.id">{{point.name}}</option></select><i class="fas fa-map-marker-alt location-icon pickup-icon"></i></div>
+  <label for="pickupLocation">Origin Transit Point</label>
+  <div class="address-input-container" *ngIf="userRole === 'TRANSIT_OFFICER'"><input id="pickupLocation" [value]="assignedOriginTransitPoint?.name || 'Loading assigned transit point…'" readonly><i class="fas fa-map-marker-alt location-icon pickup-icon"></i></div>
+  <div class="address-input-container" *ngIf="userRole !== 'TRANSIT_OFFICER'"><select id="pickupLocation" [value]="selectedPickupTransitPointId" (change)="onPickupTransitPointChange($event)" [class.error]="isFieldInvalid('pickupLocation')"><option value="">Select origin transit point</option><option *ngFor="let point of pickupTransitPoints" [value]="point.id">{{point.name}}</option></select><i class="fas fa-map-marker-alt location-icon pickup-icon"></i></div>
   <div class="error-message" *ngIf="getFieldError('pickupLocation')">{{ getFieldError('pickupLocation') }}</div>
-</div><div class="form-group address-input-group" *ngIf="false">
+</div><div class="form-group address-input-group">
                 <label for="destination">Destination</label>
                 <div class="address-input-container">
                   <select
                     id="destination"
-                    [value]="selectedDestinationRouteId"
-                    (change)="onSavedDestinationChange($event)"
+                    [value]="selectedDestinationTransitPointId"
+                    (change)="onDestinationTransitPointChange($event)"
                     [class.error]="isFieldInvalid('destination')"
                   >
-                    <option value="">Select saved route</option>
-                    <option *ngFor="let route of savedRoutes" [value]="route.id">
+                    <option value="">Select destination transit point</option>
+                    <option *ngFor="let route of pickupTransitPoints" [value]="route.id" [disabled]="route.id === selectedPickupTransitPointId">
                       {{ route.name || route.routeName || (route.origin + ' → ' + route.destination) }}
                     </option>
                   </select>
@@ -307,6 +328,11 @@
 
 
           </div>
+
+          <label class="check-row" [formGroup]="deliveryForm">
+            <input type="checkbox" formControlName="requestLockerOnConfirmation">
+            Request a destination locker as soon as this parcel is confirmed
+          </label>
 
           <!-- Route Information -->
           <div class="route-summary" *ngIf="routeDistance > 0">
@@ -411,6 +437,7 @@
                 <p><strong>Pickup:</strong> {{ deliveryForm.get('pickupLocation')?.value || 'Not specified' }}</p>
                 <p><strong>Destination:</strong> {{ deliveryForm.get('destination')?.value || 'Not specified' }}</p>
                 <p><strong>Weight:</strong> {{ deliveryForm.get('parcelWeight')?.value || 0 }} kg</p>
+                <p><strong>Estimated value:</strong> KSH {{ deliveryForm.get('estimatedValue')?.value || 0 }}</p>
                 <p><strong>Price per kg:</strong> {{ getFormattedPricePerKg() }}</p>
                 <p><strong>Total Price:</strong> {{ getFormattedTotalPrice() }}</p>
               </div>

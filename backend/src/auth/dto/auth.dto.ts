@@ -22,12 +22,11 @@ export class RegisterDto {
   @MaxLength(50, { message: 'Name cannot exceed 50 characters' })
   name: string;
 
-  @IsOptional()
   @IsString()
-  @Matches(/^\+?[\d\s\-()]+$/, {
-    message: 'Please provide a valid phone number',
+  @Matches(/^\d{10}$/, {
+    message: 'Phone number must contain exactly 10 digits',
   })
-  phone?: string;
+  phone: string;
 
   @IsOptional()
   @IsString()
