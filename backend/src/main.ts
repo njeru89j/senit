@@ -1,5 +1,9 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
+import { existsSync } from 'fs';
+import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { validateEnvironment } from './common/environment';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
@@ -9,7 +13,7 @@ async function bootstrap() {
 
   try {
     validateEnvironment();
-    const app = await NestFactory.create(AppModule, {
+    const app = await NestFactory.create<NestExpressApplication>(AppModule, {
       logger: ['error', 'warn', 'log', 'debug', 'verbose'],
     });
 
@@ -49,6 +53,24 @@ async function bootstrap() {
 
     // API prefix
     app.setGlobalPrefix('api');
+
+    // Serve the SPA while leaving API and Socket.IO requests to Nest.
+    const frontendPath = join(process.cwd(), 'public');
+    const frontendIndex = join(frontendPath, 'index.html');
+    if (existsSync(frontendIndex)) {
+      app.useStaticAssets(frontendPath);
+      app.use((request: Request, response: Response, next: NextFunction) => {
+        if (
+          request.path.startsWith('/api') ||
+          request.path.startsWith('/socket.io') ||
+          !request.accepts('html')
+        ) {
+          next();
+          return;
+        }
+        response.sendFile(frontendIndex);
+      });
+    }
 
     const port = process.env.PORT ?? 3000;
     await app.listen(port);
