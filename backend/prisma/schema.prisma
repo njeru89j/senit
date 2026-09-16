@@ -555,6 +555,7 @@ model LockerRequest {
   requestedBy String
   stationId   String?
   size        LockerSize @default(MEDIUM)
+  requestedMinutes Int   @default(1440)
   status      String     @default("PENDING")
   reviewedBy  String?
   reviewedAt  DateTime?

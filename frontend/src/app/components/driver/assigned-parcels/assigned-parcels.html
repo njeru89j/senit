@@ -159,7 +159,17 @@
             <button 
               class="btn btn-primary" 
               *ngIf="parcel.status === 'assigned'"
+              (click)="acceptAssignment(parcel.id)"
+              [disabled]="acceptedParcelIds.has(parcel.id)"
+            >
+              <i class="fas fa-check"></i>
+              {{ acceptedParcelIds.has(parcel.id) ? 'Accepted' : 'Accept' }}
+            </button>
+            <button 
+              class="btn btn-primary" 
+              *ngIf="parcel.status === 'assigned'"
               (click)="confirmCollection(parcel.id)"
+              [disabled]="!acceptedParcelIds.has(parcel.id)"
             >
               <i class="fas fa-box-open"></i>
               Confirm Collection
@@ -167,19 +177,11 @@
             <button class="btn btn-danger" *ngIf="parcel.status === 'assigned'" (click)="openReject(parcel.id)"><i class="fas fa-times"></i> Reject</button>
             <button 
               class="btn btn-primary" 
-              *ngIf="parcel.status === 'picked_up'"
+              *ngIf="parcel.status === 'collected'"
               (click)="startDelivery(parcel.id)"
             >
               <i class="fas fa-play"></i>
               Start Delivery
-            </button>
-            <button 
-              class="btn btn-success" 
-              *ngIf="parcel.status === 'in_transit'"
-              (click)="completeDelivery(parcel.id)"
-            >
-              <i class="fas fa-check"></i>
-              Complete
             </button>
           </div>
         </div>

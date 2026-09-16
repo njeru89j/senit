@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import {
   DashboardStatsDto,
   SystemStatsDto,
@@ -13,6 +14,9 @@ import {
   BulkAssignParcelsDto,
   DriverManagementDto,
   UserManagementDto,
+  UpgradeCustomerToDriverDto,
+  CreateDriverAccountDto,
+  CreateTransitOfficerAccountDto,
   DriverApplicationManagementDto,
   ParcelManagementDto,
   DriverFilterDto,
@@ -101,12 +105,16 @@ export class AdminService {
           { id: { in: nominations.map((item) => item.transitPointId) } },
         ],
       },
-      select: { id: true, name: true },
+      select: { id: true, name: true, routeId: true },
     });
     const pointIds = points.map((point) => point.id);
     const pointNames = points.map((point) => point.name).filter(Boolean);
+    const memberships = pointIds.length
+      ? await this.prisma.routeTransitPoint.findMany({ where: { transitPointId: { in: pointIds } }, select: { routeId: true } })
+      : [];
+    const routeIds = [...new Set([...points.map((point) => point.routeId), ...memberships.map((membership) => membership.routeId)].filter((id): id is string => !!id))];
 
-    if (!pointIds.length && !pointNames.length) {
+    if (!pointIds.length && !pointNames.length && !routeIds.length) {
       return { id: { in: [] } };
     }
 
@@ -114,6 +122,8 @@ export class AdminService {
       OR: [
         ...(pointIds.length ? [{ currentTransitPointId: { in: pointIds } }] : []),
         ...(pointNames.length ? [{ currentLocation: { in: pointNames } }] : []),
+        ...(pointNames.length ? [{ deliveryAddress: { in: pointNames, mode: 'insensitive' as const } }] : []),
+        ...(routeIds.length ? [{ routeId: { in: routeIds } }] : []),
       ],
     };
   }
@@ -1119,6 +1129,97 @@ export class AdminService {
     };
   }
 
+  async upgradeCustomerToDriver(userId: string, details: UpgradeCustomerToDriverDto, adminId: string): Promise<UserResponseDto> {
+    const user = await this.prisma.$transaction(async (tx) => {
+      const routesServed = details.routesServed ?? [];
+      if (routesServed.length) {
+        const routeCount = await tx.route.count({
+          where: { id: { in: routesServed }, active: true },
+        });
+        if (routeCount !== routesServed.length) {
+          throw new BadRequestException('One or more selected routes are invalid');
+        }
+      }
+      const updated = await tx.user.updateMany({
+        where: { id: userId, role: 'CUSTOMER', isActive: true, deletedAt: null },
+        data: {
+          role: 'DRIVER',
+          licenseNumber: details.licenseNumber,
+          vehicleType: details.vehicleType,
+          vehicleNumber: details.vehicleNumber || null,
+          driverApplicationStatus: 'APPROVED',
+          driverApprovalDate: new Date(),
+          driverApprovedBy: adminId,
+          driverRejectionReason: null,
+          isAvailable: true,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new BadRequestException('Only active customer accounts can be upgraded to drivers');
+      }
+      await tx.driverProfile.upsert({
+        where: { userId },
+        create: { userId, routesServed, approvalStatus: 'APPROVED' },
+        update: { routesServed, approvalStatus: 'APPROVED' },
+      });
+      return tx.user.findUniqueOrThrow({ where: { id: userId } });
+    });
+    return this.mapToUserResponse(user);
+  }
+
+  async createDriverAccount(details: CreateDriverAccountDto, adminId: string): Promise<UserResponseDto> {
+    const email = details.email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (existing) throw new BadRequestException('An account already exists for this email address');
+
+    const routesServed = details.routesServed ?? [];
+    if (routesServed.length) {
+      const routeCount = await this.prisma.route.count({ where: { id: { in: routesServed }, active: true } });
+      if (routeCount !== routesServed.length) throw new BadRequestException('One or more selected routes are invalid');
+    }
+    const password = await bcrypt.hash(details.password, 12);
+    const driver = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          name: details.name,
+          email,
+          phone: details.phone,
+          address: details.address || null,
+          password,
+          role: 'DRIVER',
+          licenseNumber: details.licenseNumber,
+          vehicleType: details.vehicleType,
+          vehicleNumber: details.vehicleNumber || null,
+          driverApplicationStatus: 'APPROVED',
+          driverApprovalDate: new Date(),
+          driverApprovedBy: adminId,
+          isAvailable: true,
+          isActive: true,
+        },
+      });
+      await tx.driverProfile.create({ data: { userId: created.id, routesServed, approvalStatus: 'APPROVED' } });
+      await tx.auditLog.create({ data: { userId: adminId, action: 'DRIVER_ACCOUNT_CREATED', entityType: 'User', entityId: created.id, after: { email, routesServed } } });
+      return created;
+    });
+    return this.mapToUserResponse(driver);
+  }
+
+  async createTransitOfficerAccount(details: CreateTransitOfficerAccountDto, adminId: string): Promise<UserResponseDto> {
+    const email = details.email.trim().toLowerCase();
+    if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) throw new BadRequestException('An account already exists for this email address');
+    const point = await this.prisma.transitPoint.findFirst({ where: { id: details.transitPointId, active: true }, select: { id: true } });
+    if (!point) throw new BadRequestException('Select an active transit point');
+    const password = await bcrypt.hash(details.password, 12);
+    const officer = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({ data: { name: details.name.trim(), email, phone: details.phone.trim(), address: details.address?.trim() || null, password, role: 'TRANSIT_OFFICER', isActive: true } });
+      await tx.transitPointOfficer.create({ data: { transitPointId: point.id, officerId: created.id, nominatedBy: adminId } });
+      await tx.transitPoint.update({ where: { id: point.id }, data: { officerId: created.id } });
+      await tx.auditLog.create({ data: { userId: adminId, action: 'TRANSIT_OFFICER_ACCOUNT_CREATED', entityType: 'User', entityId: created.id, after: { transitPointId: point.id } } });
+      return created;
+    });
+    return this.mapToUserResponse(officer);
+  }
+
   async manageUser(
     userId: string,
     managementDto: UserManagementDto,
@@ -1210,7 +1311,7 @@ export class AdminService {
   }
 
   // Driver Management
-  async findAllDrivers(query: DriverFilterDto): Promise<{
+  async findAllDrivers(query: DriverFilterDto, actor?: AdminActor): Promise<{
     drivers: UserResponseDto[];
     total: number;
     page: number;
@@ -1224,6 +1325,7 @@ export class AdminService {
       isAvailable,
       vehicleType,
       hasAssignedParcels,
+      routeId,
     } = query;
 
     const skip = (page - 1) * limit;
@@ -1232,6 +1334,54 @@ export class AdminService {
       role: 'DRIVER',
       deletedAt: null,
     };
+
+    if (actor?.role === 'TRANSIT_OFFICER') {
+      if (!routeId) {
+        throw new BadRequestException('A parcel route is required to list drivers');
+      }
+
+      const nominations = await this.prisma.transitPointOfficer.findMany({
+        where: { officerId: actor.id },
+        select: { transitPointId: true },
+      });
+      const officerPoints = await this.prisma.transitPoint.findMany({
+        where: {
+          active: true,
+          OR: [
+            { officerId: actor.id },
+            { id: { in: nominations.map((item) => item.transitPointId) } },
+          ],
+        },
+        select: { id: true, routeId: true },
+      });
+      // A transit point's routes come from its RouteTransitPoint memberships (a point can sit on
+      // several routes); the single legacy TransitPoint.routeId field is kept only as a fallback.
+      const memberships = await this.prisma.routeTransitPoint.findMany({
+        where: { transitPointId: { in: officerPoints.map((point) => point.id) } },
+        select: { routeId: true },
+      });
+      const allowedRouteIds = new Set(
+        [...officerPoints.map((point) => point.routeId), ...memberships.map((membership) => membership.routeId)].filter((id): id is string => !!id),
+      );
+      if (!allowedRouteIds.has(routeId)) {
+        throw new BadRequestException('This parcel route is not assigned to your transit point');
+      }
+
+      where.isActive = true;
+    }
+
+    if (routeId) {
+      const matchingProfiles = await this.prisma.driverProfile.findMany({
+        where: {
+          OR: [
+            { currentRouteId: routeId },
+            { routesServed: { has: routeId } },
+          ],
+        },
+        select: { userId: true },
+      });
+      where.id = { in: matchingProfiles.map((profile) => profile.userId) };
+    }
 
     if (search) {
       where.OR = [
@@ -1699,7 +1849,7 @@ export class AdminService {
         if (parcel.routeId) {
           const servesParcelRoute =
             newDriverProfile?.currentRouteId === parcel.routeId ||
-            (!newDriverProfile?.currentRouteId && newDriverProfile?.routesServed?.includes(parcel.routeId));
+            newDriverProfile?.routesServed?.includes(parcel.routeId);
 
           if (!servesParcelRoute) {
             throw new BadRequestException('Driver is not on this parcel route today');
@@ -1823,7 +1973,7 @@ export class AdminService {
     const parcel = await this.prisma.parcel.findFirst({
       where: await this.applyTransitOfficerParcelScope({
         id: parcelId,
-        status: { in: ['created', 'pending'] },
+        status: { in: ['created', 'pending', 'awaiting_driver_assignment'] },
         driverId: null,
         deletedAt: null,
       }, actor),
@@ -1864,7 +2014,7 @@ export class AdminService {
     if (parcel.routeId) {
       const servesParcelRoute =
         driverProfile?.currentRouteId === parcel.routeId ||
-        (!driverProfile?.currentRouteId && driverProfile?.routesServed?.includes(parcel.routeId));
+        driverProfile?.routesServed?.includes(parcel.routeId);
 
       if (!servesParcelRoute) {
         throw new BadRequestException('Driver is not on this parcel route today');

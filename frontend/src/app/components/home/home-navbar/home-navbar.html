@@ -11,8 +11,7 @@
       <a (click)="scrollToSection('about')" class="home-nav-link">About</a>
       <a (click)="scrollToSection('services')" class="home-nav-link">Services</a>
       <a (click)="scrollToSection('features')" class="home-nav-link">Features</a>
-      <a (click)="scrollToSection('process')" class="home-nav-link">How It Works</a>
-      <a (click)="scrollToSection('partnerships')" class="home-nav-link">Partners</a>
+      <a routerLink="/track" class="home-nav-link">Track My Parcel</a>
     </div>
     
     <!-- Action Buttons - show only when not authenticated -->
@@ -94,8 +93,7 @@
       <a (click)="scrollToSection('about'); closeMobileMenu()" class="mobile-nav-link">About</a>
       <a (click)="scrollToSection('services'); closeMobileMenu()" class="mobile-nav-link">Services</a>
       <a (click)="scrollToSection('features'); closeMobileMenu()" class="mobile-nav-link">Features</a>
-      <a (click)="scrollToSection('process'); closeMobileMenu()" class="mobile-nav-link">How It Works</a>
-      <a (click)="scrollToSection('partnerships'); closeMobileMenu()" class="mobile-nav-link">Partners</a>
+      <a routerLink="/track" (click)="closeMobileMenu()" class="mobile-nav-link">Track My Parcel</a>
     </div>
     
     <div class="mobile-menu-actions" *ngIf="!isAuthenticated">

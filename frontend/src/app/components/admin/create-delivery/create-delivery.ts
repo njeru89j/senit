@@ -126,7 +126,7 @@ export class CreateDelivery implements OnInit {
   showMobileMenu: boolean = false;
   isSubmitting: boolean = false;
   savedRoutes: any[] = [];
-  selectedPickupRouteId = '';
+  customerTransitPointsList: any[] = [];
   selectedPickupTransitPointId = '';
   selectedDestinationTransitPointId = '';
   assignedOriginTransitPoint: any = null;
@@ -157,8 +157,8 @@ export class CreateDelivery implements OnInit {
       destination: ['', [Validators.required, Validators.minLength(3)]],
       parcelWeight: ['', [Validators.required, Validators.min(0.1), Validators.max(1000)]],
       estimatedValue: ['', [Validators.required, Validators.min(1), Validators.max(100000)]],
-      pricePerKg: [this.pricePerKg, [Validators.required, Validators.min(0.01)]],
-      requestLockerOnConfirmation: [false]
+      requestLockerOnConfirmation: [false],
+      lockerRequestedHours: [24, [Validators.min(1), Validators.max(72)]]
     }, { validators: senderRecipientValidator });
 
     // Listen to parcel weight changes to calculate total price
@@ -166,11 +166,6 @@ export class CreateDelivery implements OnInit {
       this.calculateTotalPrice(weight);
     });
 
-    // Listen to price per kg changes to recalculate total price
-    this.deliveryForm.get('pricePerKg')?.valueChanges.subscribe(price => {
-      const weight = this.deliveryForm.get('parcelWeight')?.value;
-      this.calculateTotalPrice(weight, price);
-    });
 
     // Listen to form changes to trigger cross-field validation
     this.deliveryForm.valueChanges.subscribe(() => {
@@ -185,6 +180,7 @@ export class CreateDelivery implements OnInit {
     const currentUser = this.authService.getCurrentUser();
     this.userRole = currentUser?.role || '';
     this.loadSavedRoutes();
+    if (this.userRole === 'CUSTOMER') this.loadCustomerTransitPoints();
     if (this.userRole === 'TRANSIT_OFFICER') this.loadAssignedOriginTransitPoint();
     if (this.userRole === 'CUSTOMER' && currentUser) {
       this.deliveryForm.patchValue({
@@ -195,6 +191,9 @@ export class CreateDelivery implements OnInit {
       ['senderName', 'senderEmail', 'senderContact'].forEach((field) =>
         this.deliveryForm.get(field)?.disable(),
       );
+      if (!currentUser.phone) {
+        this.toastService.showInfo('Add a 10-digit phone number to your profile before creating your first delivery.');
+      }
     }
 
     const navigation = this.router.getCurrentNavigation();
@@ -227,6 +226,13 @@ export class CreateDelivery implements OnInit {
     this.operationsService.publicRoutes().subscribe({
       next: (routes) => this.savedRoutes = routes || [],
       error: () => this.savedRoutes = []
+    });
+  }
+
+  private loadCustomerTransitPoints(): void {
+    this.operationsService.publicTransitPoints().subscribe({
+      next: (points) => this.customerTransitPointsList = points || [],
+      error: () => this.toastService.showError('Could not load transit points. Please try again.'),
     });
   }
 
@@ -267,40 +273,32 @@ export class CreateDelivery implements OnInit {
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  onPickupRouteChange(event: Event): void {
-    this.selectedPickupRouteId = (event.target as HTMLSelectElement).value;
-    this.selectedPickupTransitPointId = this.userRole === 'TRANSIT_OFFICER'
-      ? this.assignedOriginTransitPoint?.id || ''
-      : '';
-    this.selectedDestinationTransitPointId = '';
-    this.deliveryForm.patchValue({
-      pickupLocation: this.userRole === 'TRANSIT_OFFICER' ? this.assignedOriginTransitPoint?.name || '' : '',
-      destination: '',
-    });
-    this.pickupCoordinates = null;
-    this.destinationCoordinates = null;
+  get customerTransitPoints(): any[] {
+    return this.userRole === 'CUSTOMER' ? this.customerTransitPointsList : this.pickupTransitPoints;
   }
 
   onPickupTransitPointChange(event: Event): void {
     const pointId = (event.target as HTMLSelectElement).value;
     this.selectedPickupTransitPointId = pointId;
-    const point = this.pickupTransitPoints.find(item => item.id === pointId);
+    const point = this.customerTransitPoints.find(item => item.id === pointId);
     if (!point) {
       this.deliveryForm.patchValue({ pickupLocation: '' });
       this.pickupCoordinates = null;
       return;
     }
     this.deliveryForm.patchValue({ pickupLocation: point.name });
-    if (typeof point.latitude === 'number' && typeof point.longitude === 'number') this.pickupCoordinates = { lat: point.latitude, lng: point.longitude };
+    this.pickupCoordinates = typeof point.latitude === 'number' && typeof point.longitude === 'number'
+      ? { lat: point.latitude, lng: point.longitude } : null;
     this.showPickupSuggestions = false;
     this.updateMapMarkers();
   }
 
   onDestinationTransitPointChange(event: Event): void {
     this.selectedDestinationTransitPointId = (event.target as HTMLSelectElement).value;
-    const point = this.pickupTransitPoints.find(item => item.id === this.selectedDestinationTransitPointId);
+    const point = this.customerTransitPoints.find(item => item.id === this.selectedDestinationTransitPointId);
     this.deliveryForm.patchValue({ destination: point?.name || '' });
-    this.destinationCoordinates = point && typeof point.latitude === 'number' ? { lat: point.latitude, lng: point.longitude } : null;
+    this.destinationCoordinates = point && typeof point.latitude === 'number' && typeof point.longitude === 'number'
+      ? { lat: point.latitude, lng: point.longitude } : null;
     this.updateMapMarkers();
   }
 
@@ -503,6 +501,20 @@ export class CreateDelivery implements OnInit {
     setTimeout(() => {
       this.showRecipientSuggestions = false;
     }, 200);
+  }
+
+  onRecipientEmailBlur(): void {
+    const email = (this.deliveryForm.get('recipientEmail')?.value || '').trim().toLowerCase();
+    if (!email || this.deliveryForm.get('recipientEmail')?.invalid) return;
+    this.parcelsService.getContactSuggestions(email, 'recipient', 10).subscribe({
+      next: (contacts) => {
+        const registeredRecipient = contacts.find((contact: any) => contact.isRegistered && contact.email?.toLowerCase() === email);
+        if (registeredRecipient) {
+          this.selectRecipientSuggestion(registeredRecipient);
+          this.toastService.showInfo('Recipient account found. Details were filled in.');
+        }
+      },
+    });
   }
 
   private async geocodePickupAddress(address: string): Promise<void> {
@@ -713,22 +725,14 @@ export class CreateDelivery implements OnInit {
       destination: orderDetails.destination || '',
       parcelWeight: orderDetails.parcelWeight || '',
       estimatedValue: orderDetails.estimatedValue || '',
-      pricePerKg: orderDetails.pricePerKg || this.pricePerKg
     });
 
     // Calculate total price
-    this.calculateTotalPrice(orderDetails.parcelWeight, orderDetails.pricePerKg);
+    this.calculateTotalPrice(orderDetails.parcelWeight);
   }
 
   calculateTotalPrice(weight: number, pricePerKg?: number) {
-    const currentPricePerKg = pricePerKg || this.deliveryForm.get('pricePerKg')?.value || this.pricePerKg;
-    if (weight && weight > 0 && currentPricePerKg && currentPricePerKg > 0) {
-      const weightPrice = weight * currentPricePerKg;
-      const deliveryFee = 200; // Fixed delivery fee
-      this.totalPrice = weightPrice + deliveryFee;
-    } else {
-      this.totalPrice = 0;
-    }
+    this.totalPrice = this.getCalculatedDeliveryFee();
   }
 
   getFormattedTotalPrice(): string {
@@ -736,14 +740,12 @@ export class CreateDelivery implements OnInit {
   }
 
   getFormattedPricePerKg(): string {
-    const price = this.deliveryForm.get('pricePerKg')?.value || this.pricePerKg;
-    return `KSH ${price.toFixed(2)}`;
+    return 'Calculated from weight, distance, and declared value';
   }
 
   calculateWeightPrice(): number {
     const weight = this.deliveryForm.get('parcelWeight')?.value || 0;
-    const pricePerKg = this.deliveryForm.get('pricePerKg')?.value || this.pricePerKg;
-    return weight * pricePerKg;
+    return weight * this.pricePerKg;
   }
 
   getFormattedWeightPrice(): string {
@@ -752,7 +754,28 @@ export class CreateDelivery implements OnInit {
   }
 
   getFormattedDeliveryFee(): string {
-    return 'KSH 200.00';
+    return `KSH ${this.getCalculatedDeliveryFee().toFixed(2)}`;
+  }
+
+  getCalculatedDeliveryFee(): number {
+    const weight = Number(this.deliveryForm.get('parcelWeight')?.value) || 0;
+    const declaredValue = Number(this.deliveryForm.get('estimatedValue')?.value) || 0;
+    if (weight < 5 && declaredValue < 5000) return 300;
+
+    const distanceBands = Math.floor(this.getTransitPointDistanceKm() / 100);
+    const perKgFee = 20 + distanceBands * 5;
+    return Math.round(300 + weight * perKgFee);
+  }
+
+  private getTransitPointDistanceKm(): number {
+    if (!this.pickupCoordinates || !this.destinationCoordinates) return 0;
+    const toRadians = (degrees: number) => degrees * Math.PI / 180;
+    const latitudeDifference = toRadians(this.destinationCoordinates.lat - this.pickupCoordinates.lat);
+    const longitudeDifference = toRadians(this.destinationCoordinates.lng - this.pickupCoordinates.lng);
+    const a = Math.sin(latitudeDifference / 2) ** 2
+      + Math.cos(toRadians(this.pickupCoordinates.lat)) * Math.cos(toRadians(this.destinationCoordinates.lat))
+      * Math.sin(longitudeDifference / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   getSubmitButtonText(): string {
@@ -760,10 +783,14 @@ export class CreateDelivery implements OnInit {
     return this.isEditMode ? 'Update Delivery' : 'Create Order & Assign Driver';
   }
 
+  getCustomerCreateHelp(): string {
+    return 'Your account is used as the sender. Add recipient details, declared value, estimated weight, and an optional locker request.';
+  }
+
   isDeliveryTabValid(): boolean {
     const deliveryFields = this.userRole === 'CUSTOMER'
-      ? ['recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'estimatedValue', 'pricePerKg']
-      : ['senderName', 'senderContact', 'senderEmail', 'recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'estimatedValue', 'pricePerKg'];
+      ? ['recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'estimatedValue']
+      : ['senderName', 'senderContact', 'senderEmail', 'recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'estimatedValue'];
     
     return deliveryFields.every(field => {
       const control = this.deliveryForm.get(field);
@@ -778,7 +805,8 @@ export class CreateDelivery implements OnInit {
       const control = this.deliveryForm.get(field);
       return control && control.valid && control.value;
     }) && !!this.selectedPickupTransitPointId && !!this.selectedDestinationTransitPointId
-      && !!this.pickupCoordinates && !!this.destinationCoordinates;
+      && this.selectedPickupTransitPointId !== this.selectedDestinationTransitPointId
+      && (this.userRole === 'CUSTOMER' || (!!this.pickupCoordinates && !!this.destinationCoordinates));
   }
 
   onSubmit() {
@@ -790,6 +818,7 @@ export class CreateDelivery implements OnInit {
     if (this.deliveryForm.valid) {
       this.isSubmitting = true;
       const formData = this.deliveryForm.getRawValue();
+      const calculatedDeliveryFee = this.getCalculatedDeliveryFee();
       
       // Show loading toast
       this.toastService.showInfo('Creating delivery...');
@@ -807,6 +836,7 @@ export class CreateDelivery implements OnInit {
         pickupTransitPointId: this.selectedPickupTransitPointId,
         destinationTransitPointId: this.selectedDestinationTransitPointId,
         requestLockerOnConfirmation: !!formData.requestLockerOnConfirmation,
+        lockerRequestedMinutes: +formData.lockerRequestedHours * 60,
         weight: formData.parcelWeight,
         description: `Delivery from ${formData.pickupLocation} to ${formData.destination}`,
         value: formData.estimatedValue,
@@ -822,10 +852,15 @@ export class CreateDelivery implements OnInit {
           console.log('Parcel creation response:', response);
           
           if (response && response.id) {
-            this.toastService.showSuccess('Parcel created successfully!');
+            this.toastService.showSuccess(`Parcel created successfully. Tracking ID: ${response.trackingNumber}`);
 
             if (this.userRole === 'CUSTOMER') {
               this.router.navigate(['/user/parcel-details', response.id]);
+              return;
+            }
+
+            if (this.userRole === 'TRANSIT_OFFICER') {
+              this.router.navigate(['/transit-officer/parcel-details', response.id]);
               return;
             }
             
@@ -836,7 +871,7 @@ export class CreateDelivery implements OnInit {
               pickupAddress: formData.pickupLocation,
               deliveryAddress: formData.destination,
               weight: formData.parcelWeight,
-              price: this.totalPrice,
+              price: calculatedDeliveryFee,
               value: formData.estimatedValue,
               pickupLat: this.pickupCoordinates?.lat,
               pickupLng: this.pickupCoordinates?.lng,
@@ -860,7 +895,7 @@ export class CreateDelivery implements OnInit {
                 recipientContact: formData.recipientContact,
                 pickupLocation: formData.pickupLocation,
                 destination: formData.destination,
-                totalPrice: this.totalPrice,
+                totalPrice: calculatedDeliveryFee,
                 parcelWeight: formData.parcelWeight,
                 estimatedValue: formData.estimatedValue,
                 pricePerKg: this.pricePerKg,

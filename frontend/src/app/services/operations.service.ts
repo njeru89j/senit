@@ -9,6 +9,7 @@ export class OperationsService {
   constructor(private http: HttpClient) {}
   routes() { return this.http.get<any[]>(`${this.base}/routes`); }
   publicRoutes() { return this.http.get<any[]>(`${this.publicBase}/routes`); }
+  publicTransitPoints() { return this.http.get<any[]>(`${this.publicBase}/transit-points`); }
   transitPoints() { return this.http.get<any[]>(`${this.base}/transit-points`); }
   transitOfficerCandidates() { return this.http.get<any[]>(`${this.base}/transit-officers/candidates`); }
   nominateTransitOfficer(userId: string) { return this.http.post<any>(`${this.base}/transit-officers/${userId}/nominate`, {}); }
@@ -25,6 +26,7 @@ export class OperationsService {
   updateTransitPoint(id: string, data: any) { return this.http.patch(`${this.base}/transit-points/${id}`, data); }
   createBatch(data: any) { return this.http.post(`${this.base}/batches`, data); }
   verifyParcelsAtTransit(data: any) { return this.http.post(`${this.base}/parcels/verify-transit`, data); }
+  confirmParcelReceived(id: string) { return this.http.post(`${this.base}/parcels/${id}/confirm-received`, {}); }
   batches() { return this.http.get<any[]>(`${this.base}/batches`); }
   batch(id: string) { return this.http.get<any>(`${this.base}/batches/${id}`); }
   recordBatchEvent(id: string, data: any) { return this.http.post(`${this.base}/batches/${id}/events`, data); }
@@ -41,6 +43,7 @@ export class OperationsService {
   requestLocker(data: any) { return this.http.post(`${this.base}/lockers/requests`, data); }
   lockerRequests() { return this.http.get<any[]>(`${this.base}/lockers/requests`); }
   approveLockerRequest(id: string, data: any) { return this.http.post<any>(`${this.base}/lockers/requests/${id}/approve`, data); }
+  confirmLockerFit(id: string, data: any) { return this.http.post<any>(`${this.base}/lockers/requests/${id}/confirm-fit`, data); }
   rejectLockerRequest(id: string) { return this.http.post(`${this.base}/lockers/requests/${id}/reject`, {}); }
   collectLocker(id: string, code: string) { return this.http.post(`${this.base}/lockers/${id}/collect`, { code }); }
   requestLockerExtension(id: string, requestedMinutes: number, reason?: string) { return this.http.post(`${this.base}/lockers/${id}/extension-requests`, { requestedMinutes, reason }); }

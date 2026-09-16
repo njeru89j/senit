@@ -25,6 +25,7 @@ interface ParcelDetails {
   estimatedDeliveryTime?: number;
   senderName?: string;
   recipientName?: string;
+  routeId?: string;
 }
 
 interface DriverWithSelection extends Driver {
@@ -85,7 +86,6 @@ export class AssignDriver implements OnInit, OnDestroy {
 
   ngOnInit() {
     console.log('🚀 AssignDriver component initializing...');
-    this.loadAvailableDrivers();
     this.setupFilterListeners();
     
     // Add window resize listener for map
@@ -139,6 +139,8 @@ export class AssignDriver implements OnInit, OnDestroy {
     console.log('🎯 Final parcel details state:', this.parcelDetails);
     console.log('🎯 Final reassignment state:', this.isReassignment);
 
+    this.loadAvailableDrivers();
+
     // Initialize map after a short delay to ensure DOM is ready
     setTimeout(() => {
       console.log('🕐 Starting map initialization...');
@@ -150,7 +152,7 @@ export class AssignDriver implements OnInit, OnDestroy {
     this.isLoading = true;
     console.log('🔍 Loading available drivers...');
     
-    this.driversService.getAvailableDrivers().subscribe({
+    this.driversService.getAvailableDrivers(this.parcelDetails?.routeId, this.isTransitOfficer).subscribe({
       next: (response: any) => {
         console.log('✅ Drivers API response:', response);
         this.availableDrivers = response.drivers.map((driver: any) => ({
@@ -314,7 +316,7 @@ export class AssignDriver implements OnInit, OnDestroy {
         
         // Redirect to parcel details page
         setTimeout(() => {
-          this.router.navigate(['/admin-parcel-details', this.parcelDetails?.id || ''], {
+          this.router.navigate([this.parcelDetailsRoute, this.parcelDetails?.id || ''], {
             state: { 
               assignedDriverId: this.selectedDriver?.id,
               newlyAssigned: true,
@@ -326,7 +328,7 @@ export class AssignDriver implements OnInit, OnDestroy {
       error: (error: any) => {
         this.isLoading = false; // Reset loading state
         console.error('Error assigning driver:', error);
-        this.toastService.showError('Failed to assign driver to parcel');
+        this.toastService.showError(error?.message || 'Failed to assign driver to parcel');
       }
     });
   }
@@ -361,7 +363,7 @@ export class AssignDriver implements OnInit, OnDestroy {
         
         // Redirect to parcel details page
         setTimeout(() => {
-          this.router.navigate(['/admin-parcel-details', this.parcelDetails?.id || ''], {
+          this.router.navigate([this.parcelDetailsRoute, this.parcelDetails?.id || ''], {
             state: { 
               assignedDriverId: this.selectedDriver?.id,
               newlyAssigned: true,
@@ -374,7 +376,7 @@ export class AssignDriver implements OnInit, OnDestroy {
       error: (error: any) => {
         this.isLoading = false; // Reset loading state
         console.error('Error reassigning driver:', error);
-        this.toastService.showError('Failed to reassign driver to parcel');
+        this.toastService.showError(error?.message || 'Failed to reassign driver to parcel');
       }
     });
   }
@@ -390,11 +392,23 @@ export class AssignDriver implements OnInit, OnDestroy {
   goBack() {
     if (this.isReassignment && this.parcelDetails) {
       // If this is a reassignment, go back to the parcel details page
-      this.router.navigate(['/admin-parcel-details', this.parcelDetails.id]);
+      this.router.navigate([this.parcelDetailsRoute, this.parcelDetails.id]);
     } else {
       // Otherwise, go back to manage parcels
-      this.router.navigate(['/admin-manage-parcels']);
+      this.router.navigate([this.manageParcelsRoute]);
     }
+  }
+
+  private get isTransitOfficer(): boolean {
+    return this.router.url.startsWith('/transit-officer');
+  }
+
+  private get parcelDetailsRoute(): string {
+    return this.isTransitOfficer ? '/transit-officer/parcel-details' : '/admin-parcel-details';
+  }
+
+  private get manageParcelsRoute(): string {
+    return this.isTransitOfficer ? '/transit-officer/manage-parcels' : '/admin-manage-parcels';
   }
 
   // Map Methods

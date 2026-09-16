@@ -309,6 +309,14 @@
                     <span class="detail-value"><%= typeof parcelId !== 'undefined' ? parcelId : 'N/A' %></span>
                 </div>
                 <div class="detail-row">
+                    <span class="detail-label">Origin:</span>
+                    <span class="address-value"><%= typeof pickupAddress !== 'undefined' ? pickupAddress : 'N/A' %></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Destination:</span>
+                    <span class="address-value"><%= typeof deliveryAddress !== 'undefined' ? deliveryAddress : 'N/A' %></span>
+                </div>
+                <div class="detail-row">
                     <span class="detail-label">Status:</span>
                     <span class="detail-value">
                         <span class="status-badge">Created</span>
@@ -317,7 +325,7 @@
             </div>
             
             <div class="highlight-text">
-                <p>Your parcel is now in our system and ready for pickup by a driver.</p>
+                <p>Keep this tracking ID: <strong><%= typeof trackingNumber !== 'undefined' ? trackingNumber : 'N/A' %></strong>. Use the link below to track the parcel at any time.</p>
             </div>
             
             <div style="text-align: center;">

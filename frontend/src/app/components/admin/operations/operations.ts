@@ -19,9 +19,10 @@ export class Operations implements OnInit, OnDestroy {
   route = { name: '', origin: '', destination: '', transitPointIds: [] as string[] };
   point = { name: '', routeId: '', officerIds: [] as string[] };
   batchForm = { routeId: '', transitPointId: '', driverId: '', parcelIds: [] as string[] };
-  lockerForm = { routeId: '', transitPointId: '', parcelId: '', stationId: '', size: 'MEDIUM', expiresInMinutes: 1440 };
+  lockerForm = { routeId: '', transitPointId: '', parcelId: '', stationId: '', size: '', expiresInMinutes: 1440 };
   stationForm = { name: '', address: '', latitude: 0, longitude: 0, openingHours: '' };
   compartmentForm = { stationId: '', compartmentNo: '', size: 'MEDIUM' };
+  lockerFitSizes: Record<string, string> = {};
   officerCandidates: any[] = []; nomineeId = ''; nomineeSearch = ''; nomineeResults: any[] = [];
   showNomineeSuggestions = false; selectedNomineeIndex = -1; busy = false; message = ''; generatedLockerCode: any = null;
   readonly isTransitOfficer: boolean;
@@ -79,19 +80,53 @@ export class Operations implements OnInit, OnDestroy {
   get selectedRouteDrivers() { return this.drivers.filter(driver => { const served = driver.driverProfile?.routesServed ?? driver.routesServed ?? []; return driver.isActive !== false && (served.includes(this.batchForm.routeId) || driver.driverProfile?.currentRouteId === this.batchForm.routeId); }); }
   get selectedLockerRouteTransitPoints() { const route = this.routes.find(r => r.id === this.lockerForm.routeId); return (route?.transitPoints ?? []).map((entry: any) => entry.transitPoint ?? entry).filter((point: any) => point.active); }
   get nominatedTransitOfficers() { return this.officerCandidates.filter(user => user.role === 'TRANSIT_OFFICER'); }
-  get availableLockers() { return this.lockers.flatMap(station => (station.compartments ?? []).filter((compartment: any) => compartment.status === 'AVAILABLE').map((compartment: any) => ({ ...compartment, stationName: station.name }))); }
+  get hasLockerAvailabilityFilters() { return !!(this.lockerForm.routeId && this.lockerForm.transitPointId && this.lockerForm.size); }
+  get availableLockers() {
+    if (!this.hasLockerAvailabilityFilters) return [];
+    return this.lockers
+      .filter(station => !station.transitPointId || station.transitPointId === this.lockerForm.transitPointId)
+      .flatMap(station => (station.compartments ?? [])
+        .filter((compartment: any) => compartment.status === 'AVAILABLE' && compartment.size === this.lockerForm.size)
+        .map((compartment: any) => ({ ...compartment, stationName: station.name })));
+  }
   get availableLockerStations() {
-    if (!this.lockerForm.transitPointId) return [];
+    if (!this.hasLockerAvailabilityFilters) return [];
     return this.lockers.filter(station =>
       (!station.transitPointId || station.transitPointId === this.lockerForm.transitPointId)
       && (station.compartments ?? []).some((compartment: any) => compartment.status === 'AVAILABLE' && compartment.size === this.lockerForm.size),
     );
   }
+  get selectedAvailableLocker() { return this.availableLockers[0] ?? null; }
   get lockerAssignments() { return this.lockers.flatMap(station => (station.compartments ?? []).filter((compartment: any) => !!compartment.assignment).map((compartment: any) => ({ ...compartment.assignment, stationName: station.name, compartmentNo: compartment.compartmentNo, size: compartment.size }))); }
   reportCount(rows: any[] | undefined, key: string) { return rows?.find(row => row.status === key)?._count ?? 0; }
   maxForecastVolume() { return Math.max(1, ...this.forecasts.map(forecast => forecast.predictedVolume ?? 0)); }
   createBatch() { const data = { routeId: this.batchForm.routeId, driverId: this.batchForm.driverId, parcelIds: [...this.batchForm.parcelIds] }; this.run(() => this.api.createBatch(data), `Batch created with ${data.parcelIds.length} parcel(s)`); this.batchForm.parcelIds = []; }
-  verifyAtTransit() { const data = { routeId: this.batchForm.routeId, transitPointId: this.batchForm.transitPointId, parcelIds: [...this.batchForm.parcelIds] }; this.run(() => this.api.verifyParcelsAtTransit(data), `${data.parcelIds.length} parcel(s) verified at the transit station in good condition`); this.batchForm.parcelIds = []; }
+  verifyAtTransit() {
+    const data = { routeId: this.batchForm.routeId, transitPointId: this.batchForm.transitPointId, parcelIds: [...this.batchForm.parcelIds] };
+    const driverId = this.batchForm.driverId;
+    this.busy = true; this.message = '';
+    this.api.verifyParcelsAtTransit(data).subscribe({
+      next: (result: any) => {
+        if (!driverId || !result.awaitingOnwardRoute) {
+          this.busy = false;
+          this.message = `${data.parcelIds.length} parcel(s) verified at the transit station in good condition${driverId ? '; no onward driver is needed at this destination.' : ''}`;
+          this.batchForm.parcelIds = [];
+          this.refresh();
+          return;
+        }
+        this.api.createBatch({ routeId: data.routeId, driverId, parcelIds: data.parcelIds }).subscribe({
+          next: () => {
+            this.busy = false;
+            this.message = `${data.parcelIds.length} parcel(s) verified and assigned to the selected route driver.`;
+            this.batchForm.parcelIds = [];
+            this.refresh();
+          },
+          error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Parcels were verified, but the onward batch could not be created'; },
+        });
+      },
+      error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Transit verification failed'; },
+    });
+  }
   toggleBatchParcel(id: string) { const i = this.batchForm.parcelIds.indexOf(id); i >= 0 ? this.batchForm.parcelIds.splice(i, 1) : this.batchForm.parcelIds.push(id); }
   toggleAllBatchParcels() { const ids = this.batchEligibleParcels.map(p => p.id); this.batchForm.parcelIds = this.batchForm.parcelIds.length === ids.length ? [] : ids; }
   get batchEligibleParcels() {
@@ -100,13 +135,21 @@ export class Operations implements OnInit, OnDestroy {
     const locations = [route.origin, route.destination, ...this.selectedRouteTransitPoints.map((point: any) => point.name)].map(value => value?.trim().toLowerCase());
     return this.parcels.filter(p => ['collected', 'in_transit', 'at_transit_point'].includes(p.status) && locations.includes((p.currentLocation || p.pickupAddress || '').trim().toLowerCase()) && (!this.isTransitOfficer || p.currentTransitPointId === this.batchForm.transitPointId));
   }
-  onBatchRouteChange() { this.batchForm.transitPointId = ''; this.batchForm.driverId = ''; this.batchForm.parcelIds = []; }
+  onBatchRouteChange() {
+    this.batchForm.driverId = ''; this.batchForm.parcelIds = [];
+    if (this.isTransitOfficer) {
+      const assignedPoint = this.points[0];
+      this.batchForm.transitPointId = assignedPoint?.id ?? '';
+    } else {
+      this.batchForm.transitPointId = '';
+    }
+  }
   get lockerEligibleParcels() { return this.parcels.filter(p => p.status === 'at_destination' && p.routeId === this.lockerForm.routeId); }
-  onLockerRouteChange() { this.lockerForm.transitPointId = ''; this.lockerForm.parcelId = ''; this.lockerForm.stationId = ''; }
+  onLockerRouteChange() { this.lockerForm.transitPointId = ''; this.lockerForm.parcelId = ''; this.lockerForm.stationId = ''; this.lockerForm.size = ''; }
   onLockerTransitPointChange() { this.lockerForm.parcelId = ''; this.lockerForm.stationId = ''; }
   onLockerSizeChange() { this.lockerForm.stationId = ''; }
-  assignLocker() { this.busy = true; this.message = ''; this.generatedLockerCode = null; this.api.assignLocker({ parcelId: this.lockerForm.parcelId, stationId: this.lockerForm.stationId, routeId: this.lockerForm.routeId, transitPointId: this.lockerForm.transitPointId, size: this.lockerForm.size, expiresInMinutes: +this.lockerForm.expiresInMinutes }).subscribe({ next: (result: any) => { this.busy = false; this.generatedLockerCode = result; this.message = 'Locker assigned. Share the collection code with the parcel owner.'; this.refresh(); }, error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Could not assign locker'; } }); }
-  approveLockerRequest(request: any) { const stationId = request.stationId || this.lockers[0]?.id; if (!stationId) { this.message = 'Add a locker station before approving requests'; return; } this.busy = true; this.api.approveLockerRequest(request.id, { stationId, size: request.size }).subscribe({ next: (result: any) => { this.busy = false; this.generatedLockerCode = result; this.message = 'Locker request approved; collection code sent to the recipient.'; this.refresh(); }, error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Could not approve request'; } }); }
+  assignLocker() { const locker = this.selectedAvailableLocker; if (!locker) { this.message = 'No available locker matches the selected route, transit point, and size.'; return; } this.busy = true; this.message = ''; this.generatedLockerCode = null; this.api.assignLocker({ parcelId: this.lockerForm.parcelId, stationId: locker.stationId, routeId: this.lockerForm.routeId, transitPointId: this.lockerForm.transitPointId, size: this.lockerForm.size, expiresInMinutes: +this.lockerForm.expiresInMinutes }).subscribe({ next: (result: any) => { this.busy = false; this.generatedLockerCode = result; this.message = 'Locker assigned and collection code sent to the recipient.'; this.refresh(); }, error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Could not assign locker'; } }); }
+  approveLockerRequest(request: any) { this.busy = true; this.api.confirmLockerFit(request.id, { confirmedSize: this.lockerFitSizes[request.id] || request.size }).subscribe({ next: (result: any) => { this.busy = false; this.generatedLockerCode = result; this.message = `Fit confirmed. Locker ${result.locker.compartmentNo} was allocated and the collection code sent.`; this.refresh(); }, error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Could not allocate a suitable locker'; } }); }
   approveLockerExtension(request: any) { this.run(() => this.api.approveLockerExtension(request.id), 'Locker collection time extended'); }
   rejectLockerExtension(request: any) { this.run(() => this.api.rejectLockerExtension(request.id), 'Locker extension request rejected'); }
   rejectLockerRequest(request: any) { this.run(() => this.api.rejectLockerRequest(request.id), 'Locker request rejected'); }
@@ -131,7 +174,7 @@ export class Operations implements OnInit, OnDestroy {
     route.orderDirty = false;
   }
   private selectAssignedTransitPoint() {
-    if (!this.isTransitOfficer || this.points.length !== 1) return;
+    if (!this.isTransitOfficer || !this.points.length) return;
     const point = this.points[0];
     const routeId = point.routeId || this.routes.find(route => (route.transitPoints ?? []).some((entry: any) => (entry.transitPoint ?? entry).id === point.id))?.id || '';
     if (!routeId) return;

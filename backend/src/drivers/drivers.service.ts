@@ -8,7 +8,6 @@ import { PrismaService } from '../database/prisma.service';
 import { ParcelStatus, Prisma } from '@prisma/client';
 import {
   UpdateLocationDto,
-  DriverApplicationDto,
   DriverApplicationResponseDto,
   UserResponseDto,
   AssignParcelDto,
@@ -67,6 +66,7 @@ export class DriversService {
     sortOrder?: 'asc' | 'desc';
     minimumRating?: number;
     routeId?: string;
+    isAvailable?: boolean;
   }): Promise<{
     drivers: UserResponseDto[];
     total: number;
@@ -83,6 +83,7 @@ export class DriversService {
       sortOrder = 'desc',
       minimumRating,
       routeId,
+      isAvailable,
     } = query;
 
     // Convert string parameters to proper types
@@ -93,8 +94,17 @@ export class DriversService {
     // Build where clause with proper typing
     const where: Prisma.UserWhereInput = {
       role: 'DRIVER',
+      isActive: true,
+      driverApplicationStatus: 'APPROVED',
       deletedAt: null,
     };
+
+    if (isAvailable !== undefined) {
+      where.isAvailable =
+        typeof isAvailable === 'string'
+          ? isAvailable === 'true'
+          : isAvailable;
+    }
 
     if (search) {
       where.OR = [
@@ -126,7 +136,7 @@ export class DriversService {
         where: {
           OR: [
             { currentRouteId: routeId },
-            { currentRouteId: null, routesServed: { has: routeId } },
+            { routesServed: { has: routeId } },
           ],
         },
         select: { userId: true, routesServed: true, currentRouteId: true },
@@ -241,72 +251,6 @@ export class DriversService {
     });
 
     return this.mapToDriverResponse(updatedDriver, driverProfile);
-  }
-
-  async applyForDriver(
-    userId: string,
-    driverApplicationDto: DriverApplicationDto,
-  ): Promise<DriverApplicationResponseDto> {
-    const { licenseNumber, vehicleNumber, vehicleType, reason } =
-      driverApplicationDto;
-
-    try {
-      // Check if user exists and is eligible to apply
-      const existingUser = await this.prisma.user.findFirst({
-        where: {
-          id: userId,
-          role: 'CUSTOMER',
-          deletedAt: null,
-        },
-      });
-
-      if (!existingUser) {
-        throw new NotFoundException('User not found');
-      }
-
-      // Check if user already has a pending or approved application
-      if (existingUser.driverApplicationStatus === 'PENDING') {
-        throw new BadRequestException(
-          'You already have a pending driver application',
-        );
-      }
-
-      if (existingUser.driverApplicationStatus === 'APPROVED') {
-        throw new BadRequestException(
-          'Your driver application has already been approved',
-        );
-      }
-
-      // Allow reapplication if status is REJECTED or NOT_APPLIED
-      if (existingUser.driverApplicationStatus === 'REJECTED') {
-        this.logger.log(
-          `User ${userId} is reapplying after previous rejection`,
-        );
-      }
-
-      // Update user with driver application data
-      const updatedUser = await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          licenseNumber,
-          vehicleNumber,
-          vehicleType,
-          driverApplicationReason: reason,
-          driverApplicationStatus: 'PENDING',
-          driverApplicationDate: new Date(),
-          // Clear previous rejection reason when reapplying
-          driverRejectionReason: null,
-        },
-      });
-
-      this.logger.log(
-        `Driver application submitted successfully for user: ${userId}`,
-      );
-      return this.mapToDriverApplicationResponse(updatedUser);
-    } catch (error) {
-      this.logger.error(`Driver application failed for user ${userId}:`, error);
-      throw error;
-    }
   }
 
   async approveDriverApplication(
@@ -454,7 +398,7 @@ export class DriversService {
     const parcel = await this.prisma.parcel.findFirst({
       where: {
         id: parcelId,
-        status: { in: ['created', 'pending'] },
+        status: { in: ['created', 'pending', 'awaiting_driver_assignment'] },
         driverId: null,
         deletedAt: null,
       },
@@ -472,7 +416,7 @@ export class DriversService {
     if (parcel.routeId) {
       const servesParcelRoute =
         driverProfile?.currentRouteId === parcel.routeId ||
-        (!driverProfile?.currentRouteId && driverProfile?.routesServed?.includes(parcel.routeId));
+        driverProfile?.routesServed?.includes(parcel.routeId);
 
       if (!servesParcelRoute) {
         throw new BadRequestException('Driver is not on this parcel route today');
@@ -545,6 +489,18 @@ export class DriversService {
     });
   }
 
+  async acceptParcelAssignment(parcelId: string, driverId: string) {
+    const parcel = await this.prisma.parcel.findFirst({ where: { id: parcelId, driverId, status: ParcelStatus.assigned, deletedAt: null } });
+    if (!parcel) throw new NotFoundException('Active parcel assignment not found');
+    const assignment = await this.prisma.parcelAssignment.findFirst({ where: { parcelId, driverId, status: 'ASSIGNED' }, orderBy: { assignedAt: 'desc' } });
+    await this.prisma.$transaction(async (tx) => {
+      if (assignment) await tx.parcelAssignment.update({ where: { id: assignment.id }, data: { status: 'ACKNOWLEDGED', acknowledgedAt: new Date() } });
+      else await tx.parcelAssignment.create({ data: { parcelId, driverId, assignedBy: driverId, status: 'ACKNOWLEDGED', acknowledgedAt: new Date() } });
+      await tx.parcelStatusHistory.create({ data: { parcelId, status: ParcelStatus.assigned, updatedBy: driverId, location: parcel.currentLocation || parcel.pickupAddress, notes: 'Driver accepted the assignment and will collect the parcel.' } });
+    });
+    return { message: 'Assignment accepted. Confirm collection when the parcel is physically received.' };
+  }
+
   async updateParcelStatus(
     parcelId: string,
     driverId: string,
@@ -574,7 +530,7 @@ export class DriversService {
     const location = currentLocation || parcel.currentLocation || parcel.pickupAddress;
     const updatedParcel = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.parcel.update({ where: { id: parcelId }, data: { status, currentLocation: location, actualPickupTime: collecting ? parcel.actualPickupTime ?? new Date() : parcel.actualPickupTime, latitude, longitude } });
-      await tx.parcelStatusHistory.create({ data: { parcelId, status, location, updatedBy: driverId, notes: notes || (collecting ? 'Parcel physically collected from sender' : 'Parcel departed and is in transit') } });
+      await tx.parcelStatusHistory.create({ data: { parcelId, status, location, updatedBy: driverId, notes: notes || (collecting ? 'Parcel collected by the driver at the transit station' : 'Parcel departed and is in transit') } });
       return updated;
     });
 
@@ -590,7 +546,7 @@ export class DriversService {
     this.logger.log(`Parcel ${parcelId} status updated to ${status} by driver ${driverId}`);
 
     return {
-      message: collecting ? 'Parcel collection confirmed' : 'Parcel departed and is now in transit',
+      message: collecting ? 'Parcel collection confirmed. It can now be marked in transit when the journey begins.' : 'Parcel departed and is now in transit',
       parcel: updatedParcel,
     };
   }

@@ -14,7 +14,10 @@ export interface CreateParcelDto {
   pickupTransitPointId?: string;
   destinationTransitPointId?: string;
   requestLockerOnConfirmation?: boolean;
+  lockerRequestedMinutes?: number;
   weight: number;
+  // Only staff workflows may set a standard rate for the delivery.
+  pricePerKg?: number;
   description?: string;
   value?: number;
   deliveryInstructions?: string;

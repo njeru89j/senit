@@ -49,6 +49,8 @@ export class OperationsController {
   createBatch(@Body() body: any, @Request() req: AuthRequest) { return this.service.createBatch(body, this.user(req).id); }
   @Post('parcels/verify-transit') @Roles('ADMIN', 'TRANSIT_OFFICER')
   verifyTransit(@Body() body: any, @Request() req: AuthRequest) { const user = this.user(req); return this.service.verifyParcelsAtTransit(body, user.id, user.role); }
+  @Post('parcels/:id/confirm-received') @Roles('ADMIN', 'TRANSIT_OFFICER')
+  confirmReceived(@Param('id') id: string, @Request() req: AuthRequest) { const user = this.user(req); return this.service.confirmCustomerParcelAtTransit(id, user.id, user.role); }
   @Get('batches') @Roles('ADMIN', 'DRIVER', 'TRANSIT_OFFICER')
   batches(@Request() req: AuthRequest) { return this.service.listBatches(this.user(req)); }
   @Get('batches/:id') @Roles('ADMIN', 'DRIVER', 'TRANSIT_OFFICER')
@@ -82,6 +84,8 @@ export class OperationsController {
   lockerRequests(@Request() req: AuthRequest) { return this.service.listLockerRequests(this.user(req)); }
   @Post('lockers/requests/:id/approve') @Roles('ADMIN', 'TRANSIT_OFFICER')
   approveLockerRequest(@Param('id') id: string, @Body() body: any, @Request() req: AuthRequest) { const user = this.user(req); return this.service.approveLockerRequest(id, body, user.id, user.role); }
+  @Post('lockers/requests/:id/confirm-fit') @Roles('ADMIN', 'TRANSIT_OFFICER')
+  confirmLockerFit(@Param('id') id: string, @Body() body: any, @Request() req: AuthRequest) { const user = this.user(req); return this.service.confirmLockerFit(id, body, user.id, user.role); }
   @Post('lockers/requests/:id/reject') @Roles('ADMIN', 'TRANSIT_OFFICER')
   rejectLockerRequest(@Param('id') id: string, @Request() req: AuthRequest) { const user = this.user(req); return this.service.rejectLockerRequest(id, user.id, user.role); }
   @Post('lockers/:id/extension-requests') @Roles('CUSTOMER')
@@ -132,4 +136,7 @@ export class PublicOperationsController {
 
   @Get('routes')
   routes() { return this.service.listRoutes(); }
+
+  @Get('transit-points')
+  transitPoints() { return this.service.listPublicTransitPoints(); }
 }

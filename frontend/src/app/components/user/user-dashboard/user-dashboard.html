@@ -17,6 +17,10 @@
         </p>
       </div>
       <div class="header-actions">
+        <a class="refresh-button" routerLink="/user/create-parcel">
+          <i class="fas fa-plus"></i>
+          Create delivery
+        </a>
         <button class="refresh-button" (click)="refreshDashboard()" [disabled]="isLoading">
           <i class="fas fa-sync-alt" [class.fa-spin]="isLoading"></i>
           Refresh
@@ -157,6 +161,7 @@
               You haven't received any parcels yet. Parcels sent to you will appear here.
             </span>
           </p>
+          <a *ngIf="activeTab === 'sent'" class="view-btn" routerLink="/user/create-parcel"><i class="fas fa-plus"></i> Create delivery</a>
         </div>
       </div>
     </div>

@@ -108,25 +108,25 @@
               </select></label
             ><label>Address<input [(ngModel)]="point.name" /></label
             ><label
-              >Transit officers<select multiple size="5" [(ngModel)]="point.officerIds">
+              ><span *ngIf="false">Transit officers<select multiple size="5" [(ngModel)]="point.officerIds">
                 <option
                   *ngFor="let officer of nominatedTransitOfficers"
                   [value]="officer.id"
                 >
                   {{ officer.name }} — {{ officer.email }}
                 </option>
-              </select></label
+              </select></span></label
             ><button
               class="primary-btn full"
               (click)="addPoint()"
               [disabled]="
-                busy || !point.name || !point.routeId || !point.officerIds.length
+                busy || !point.name || !point.routeId
               "
             >
               Add point
             </button>
           </article>
-          <article class="form-card">
+          <article class="form-card" *ngIf="false">
             <h3>Nominate Transit Officer</h3>
             <p class="meta">
               Choose an active user. The user becomes available in the Transit
@@ -328,9 +328,9 @@
             ><label
               >Transit point<select
                 [(ngModel)]="batchForm.transitPointId"
-                [disabled]="!batchForm.routeId"
+                [disabled]="!batchForm.routeId || isTransitOfficer"
               >
-                <option value="">Select transit point</option>
+              <option value="">Select transit point</option>
                 <option
                   *ngFor="let point of selectedRouteTransitPoints"
                   [value]="point.id"
@@ -398,7 +398,7 @@
               !batchForm.parcelIds.length
             "
           >
-            Verify selected parcels in good condition
+            {{ batchForm.driverId ? 'Verify and assign route driver' : 'Verify selected parcels in good condition' }}
           </button>
         </article>
         <div class="table-card">
@@ -458,7 +458,14 @@
               <tbody>
                 <tr *ngFor="let request of lockerRequests">
                   <td>{{ request.parcelId }}</td>
-                  <td>{{ request.size }}</td>
+                  <td>
+                    <select [ngModel]="lockerFitSizes[request.id] || request.size" (ngModelChange)="lockerFitSizes[request.id] = $event">
+                      <option value="SMALL">Small</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="LARGE">Large</option>
+                      <option value="EXTRA_LARGE">Extra large</option>
+                    </select>
+                  </td>
                   <td>{{ request.stationId || "Any available station" }}</td>
                   <td>
                     <button
@@ -535,9 +542,9 @@
             >
             <div class="two-col">
               <label
-                >Available locker<select
+                *ngIf="false">Available locker<select
                   [(ngModel)]="lockerForm.stationId"
-                  [disabled]="!lockerForm.transitPointId"
+                  [disabled]="!hasLockerAvailabilityFilters"
                 >
                   <option value="">Select available locker</option>
                   <option
@@ -552,6 +559,7 @@
                   [(ngModel)]="lockerForm.size"
                   (ngModelChange)="onLockerSizeChange()"
                 >
+                  <option value="">Select locker size</option>
                   <option value="SMALL">Small</option>
                   <option value="MEDIUM">Medium</option>
                   <option value="LARGE">Large</option>
@@ -572,18 +580,20 @@
                 !lockerForm.routeId ||
                 !lockerForm.transitPointId ||
                 !lockerForm.parcelId ||
-                !lockerForm.stationId ||
+                !selectedAvailableLocker ||
                 !lockerForm.expiresInMinutes
               "
             >
               Assign locker &amp; generate code
             </button>
+            <p class="locker-selection" *ngIf="hasLockerAvailabilityFilters && selectedAvailableLocker">Locker <strong>{{ selectedAvailableLocker.compartmentNo }}</strong> at {{ selectedAvailableLocker.stationName }} will be selected automatically.</p>
+            <p class="empty-state" *ngIf="hasLockerAvailabilityFilters && !selectedAvailableLocker">No locker is available for this transit point and size. Choose another size or try again later.</p>
             <div class="code-card" *ngIf="generatedLockerCode">
               <span>Parcel owner collection code</span
               ><strong>{{ generatedLockerCode.collectionCode }}</strong
-              ><small>Assignment {{ generatedLockerCode.assignment.id }}</small>
+              ><small>Locker {{ generatedLockerCode.locker?.compartmentNo || 'assigned' }} · Assignment {{ generatedLockerCode.assignment.id }}</small>
             </div>
-            <div class="table-card" style="margin-top: 16px">
+            <div class="table-card" style="margin-top: 16px" *ngIf="false">
               <div class="table-title">
                 <h3>Available lockers</h3>
                 <span>{{ availableLockers.length }} available</span>
@@ -610,6 +620,7 @@
                 </table>
               </div>
             </div>
+            <p class="empty-state" *ngIf="!hasLockerAvailabilityFilters">Select a route, transit point, and locker size for automatic locker selection.</p>
           </article>
         </div>
         <div class="table-card">

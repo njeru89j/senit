@@ -6,6 +6,7 @@ import { ToastService } from '../../shared/toast/toast.service';
 import { SidebarComponent } from '../../shared/sidebar/sidebar';
 import { AdminService } from '../../../services/admin.service';
 import { AuthService } from '../../../services/auth.service';
+import { OperationsService } from '../../../services/operations.service';
 import { catchError, of } from 'rxjs';
 
 interface User {
@@ -13,7 +14,7 @@ interface User {
   name: string;
   email: string;
   phone?: string;
-  role: 'CUSTOMER' | 'DRIVER' | 'ADMIN';
+  role: 'CUSTOMER' | 'DRIVER' | 'TRANSIT_OFFICER' | 'ADMIN';
   isActive: boolean;
   createdAt: string;
   deletedAt?: string;
@@ -63,7 +64,8 @@ export class ManageUsers implements OnInit {
     private router: Router,
     private toastService: ToastService,
     private adminService: AdminService,
-    private authService: AuthService
+    private authService: AuthService,
+    private operationsService: OperationsService,
   ) {}
   
   // User role for role-based access control
@@ -107,6 +109,28 @@ export class ManageUsers implements OnInit {
   driverApplications: DriverApplication[] = [];
   totalApplications = 0;
 
+  // Admin driver upgrade workspace
+  upgradeEmail = '';
+  upgradeCandidate: User | null = null;
+  isSearchingUpgradeCandidate = false;
+  isUpgradingCandidate = false;
+  availableRoutes: any[] = [];
+  upgradeDetails = {
+    licenseNumber: '',
+    vehicleType: '',
+    vehicleNumber: '',
+    routesServed: [] as string[],
+  };
+  driverAccount = {
+    name: '', email: '', phone: '', password: '', address: '',
+    licenseNumber: '', vehicleType: '', vehicleNumber: '', routesServed: [] as string[],
+  };
+  transitPoints: any[] = [];
+  transitOfficerAccount = { name: '', email: '', phone: '', password: '', address: '', transitPointId: '' };
+  suspensionTarget: User | null = null;
+  suspensionReason = '';
+  isSuspendingUser = false;
+
   ngOnInit(): void {
     // Get the actual user role from authentication service
     const currentUser = this.authService.getCurrentUser();
@@ -119,7 +143,137 @@ export class ManageUsers implements OnInit {
     }
     
     this.loadUsers();
-    this.loadDriverApplications();
+    this.loadRoutes();
+    this.operationsService.transitPoints().subscribe(points => this.transitPoints = points || []);
+  }
+
+  loadRoutes(): void {
+    this.operationsService.routes().subscribe({
+      next: (routes) => this.availableRoutes = routes || [],
+      error: () => this.toastService.showError('Unable to load available delivery routes.'),
+    });
+  }
+
+  searchCustomerForUpgrade(): void {
+    const email = this.upgradeEmail.trim().toLowerCase();
+    this.upgradeCandidate = null;
+    if (!email) {
+      this.toastService.showError('Enter the customer email address.');
+      return;
+    }
+    this.isSearchingUpgradeCandidate = true;
+    this.adminService.getUsers(1, 10, { search: email }).subscribe({
+      next: ({ users }) => {
+        const match = (users || []).find((user: User) => user.email.toLowerCase() === email);
+        this.isSearchingUpgradeCandidate = false;
+        if (!match) {
+          this.toastService.showError('No account matches that email address.');
+          return;
+        }
+        if (match.role !== 'CUSTOMER' || !match.isActive || match.deletedAt) {
+          this.toastService.showError('Only active customer accounts can be upgraded to drivers.');
+          return;
+        }
+        this.upgradeCandidate = match;
+        this.upgradeDetails = { licenseNumber: '', vehicleType: '', vehicleNumber: '', routesServed: [] };
+      },
+      error: () => {
+        this.isSearchingUpgradeCandidate = false;
+        this.toastService.showError('Unable to search for that customer.');
+      },
+    });
+  }
+
+  toggleUpgradeRoute(routeId: string): void {
+    if (this.driverAccount.routesServed.includes(routeId)) {
+      this.driverAccount.routesServed = this.driverAccount.routesServed.filter((id) => id !== routeId);
+    } else if (this.driverAccount.routesServed.length < 3) {
+      this.driverAccount.routesServed = [...this.driverAccount.routesServed, routeId];
+    } else {
+      this.toastService.showError('A driver can serve up to three routes.');
+    }
+  }
+
+  createDriverFromWorkspace(): void {
+    if (this.isUpgradingCandidate) return;
+    const required = [
+      this.driverAccount.name,
+      this.driverAccount.email,
+      this.driverAccount.phone,
+      this.driverAccount.password,
+      this.driverAccount.licenseNumber,
+      this.driverAccount.vehicleType,
+    ];
+    if (required.some((value) => !value.trim())) {
+      this.toastService.showError('Enter the driver name, email, phone number, password, licence number, and vehicle type.');
+      return;
+    }
+    if (this.driverAccount.password.length < 8) {
+      this.toastService.showError('The temporary password must have at least 8 characters.');
+      return;
+    }
+    this.isUpgradingCandidate = true;
+    this.adminService.createDriverAccount(this.driverAccount).subscribe({
+      next: (driver) => {
+        this.toastService.showSuccess(`${driver.name} now has a driver account.`);
+        this.driverAccount = { name: '', email: '', phone: '', password: '', address: '', licenseNumber: '', vehicleType: '', vehicleNumber: '', routesServed: [] };
+        this.isUpgradingCandidate = false;
+        this.loadUsers();
+      },
+      error: (error) => {
+        this.isUpgradingCandidate = false;
+        this.toastService.showError(error?.error?.message || 'Could not create the driver account.');
+      },
+    });
+  }
+
+  createTransitOfficer(): void {
+    const form = this.transitOfficerAccount;
+    if ([form.name, form.email, form.phone, form.password, form.transitPointId].some(value => !value.trim())) { this.toastService.showError('Complete all required transit officer fields and select a transit point.'); return; }
+    if (form.password.length < 8) { this.toastService.showError('The temporary password must have at least 8 characters.'); return; }
+    this.isUpgradingCandidate = true;
+    this.adminService.createTransitOfficerAccount(form).subscribe({
+      next: (officer) => { this.toastService.showSuccess(`${officer.name} now has a transit officer account.`); this.transitOfficerAccount = { name: '', email: '', phone: '', password: '', address: '', transitPointId: '' }; this.isUpgradingCandidate = false; this.loadUsers(); },
+      error: error => { this.isUpgradingCandidate = false; this.toastService.showError(error?.error?.message || 'Could not create the transit officer account.'); },
+    });
+  }
+
+  suspendUser(user: User, event: Event): void {
+    event.stopPropagation();
+    if (user.role === 'ADMIN') { this.toastService.showError('Administrator accounts cannot be suspended here.'); return; }
+    this.suspensionTarget = user;
+    this.suspensionReason = '';
+  }
+
+  cancelSuspension(): void { if (!this.isSuspendingUser) { this.suspensionTarget = null; this.suspensionReason = ''; } }
+
+  confirmSuspension(): void {
+    const reason = this.suspensionReason.trim();
+    if (!this.suspensionTarget || !reason) { this.toastService.showError('Enter a reason for the suspension.'); return; }
+    this.isSuspendingUser = true;
+    this.adminService.manageUser(this.suspensionTarget.id, 'suspend', reason).subscribe({
+      next: () => { const name = this.suspensionTarget!.name; this.isSuspendingUser = false; this.cancelSuspension(); this.toastService.showSuccess(`${name} has been suspended. The reason was sent to their email.`); this.loadUsers(); },
+      error: error => { this.isSuspendingUser = false; this.toastService.showError(error?.error?.message || 'Could not suspend this user.'); },
+    });
+  }
+
+  upgradeCustomerFromWorkspace(): void {
+    if (!this.upgradeCandidate || this.isUpgradingCandidate) return;
+    this.isUpgradingCandidate = true;
+    this.adminService.upgradeCustomerToDriver(this.upgradeCandidate.id, this.upgradeDetails).subscribe({
+      next: () => {
+        this.toastService.showSuccess(`${this.upgradeCandidate!.name} is now a driver.`);
+        this.upgradeCandidate = null;
+        this.upgradeEmail = '';
+        this.upgradeDetails = { licenseNumber: '', vehicleType: '', vehicleNumber: '', routesServed: [] };
+        this.isUpgradingCandidate = false;
+        this.loadUsers();
+      },
+      error: (error) => {
+        this.isUpgradingCandidate = false;
+        this.toastService.showError(error?.error?.message || 'Could not upgrade the customer account.');
+      },
+    });
   }
 
   // Test method to verify API connection
@@ -392,8 +546,6 @@ export class ManageUsers implements OnInit {
     
     if (tab === 'users') {
       this.loadUsers();
-    } else if (tab === 'applications') {
-      this.loadDriverApplications();
     }
   }
 
@@ -457,6 +609,8 @@ export class ManageUsers implements OnInit {
         return 'fa-shield-alt';
       case 'DRIVER':
         return 'fa-truck';
+      case 'TRANSIT_OFFICER':
+        return 'fa-person-booth';
       case 'CUSTOMER':
         return 'fa-user';
       default:

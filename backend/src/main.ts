@@ -28,10 +28,18 @@ async function bootstrap() {
     ]);
     const isLocalDevelopmentOrigin = (origin: string) =>
       /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(origin);
+    const isTemporaryDevelopmentTunnelOrigin = (origin: string) =>
+      process.env.NODE_ENV !== 'production' &&
+      /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(origin);
 
     app.enableCors({
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.has(origin) || isLocalDevelopmentOrigin(origin)) {
+        if (
+          !origin ||
+          allowedOrigins.has(origin) ||
+          isLocalDevelopmentOrigin(origin) ||
+          isTemporaryDevelopmentTunnelOrigin(origin)
+        ) {
           callback(null, true);
           return;
         }

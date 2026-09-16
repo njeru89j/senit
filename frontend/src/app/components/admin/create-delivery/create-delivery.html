@@ -10,6 +10,7 @@
     <div class="dashboard-content">
     <div class="content-header">
       <h1 class="page-title">{{ userRole === 'CUSTOMER' ? 'Create Parcel' : 'Create Delivery' }}</h1>
+      <p *ngIf="userRole === 'CUSTOMER'" class="page-subtitle">{{ getCustomerCreateHelp() }}</p>
     </div>
 
     <!-- Tab Navigation -->
@@ -20,7 +21,7 @@
       </button>
       <button class="tab-button" [class.active]="activeTab === 'tracking'" (click)="switchTab('tracking')">
         <i class="fas fa-map-marker-alt"></i>
-        <span>Location & Route</span>
+        <span>Locations</span>
       </button>
       <button class="tab-button" [class.active]="activeTab === 'preview'" (click)="switchTab('preview')">
         <i class="fas fa-eye"></i>
@@ -34,6 +35,10 @@
         <form [formGroup]="deliveryForm" class="delivery-form">
         
         <!-- Sender Details Section -->
+        <div class="form-section customer-sender-summary" *ngIf="userRole === 'CUSTOMER'">
+          <h2 class="section-title">Sender</h2>
+          <p>Your signed-in account will be used as the sender: <strong>{{ deliveryForm.get('senderName')?.value }}</strong> ({{ deliveryForm.get('senderEmail')?.value }}).</p>
+        </div>
         <div class="form-section" *ngIf="userRole !== 'CUSTOMER'">
           <h2 class="section-title">Sender Details</h2>
           <div class="form-grid">
@@ -174,8 +179,9 @@
               <input 
                 type="email" 
                 id="recipientEmail" 
-                formControlName="recipientEmail"
-                placeholder="Enter recipient's email"
+                  formControlName="recipientEmail"
+                  placeholder="Enter recipient's email"
+                  (blur)="onRecipientEmailBlur()"
                 [class.error]="isFieldInvalid('recipientEmail')"
               >
               <div class="error-message" *ngIf="getFieldError('recipientEmail')">
@@ -190,7 +196,7 @@
           <h2 class="section-title">Parcel Details</h2>
           
           <div class="form-group">
-            <label for="parcelWeight">Parcel Weight (kg)</label>
+            <label for="parcelWeight">Estimated Parcel Weight (kg)</label>
             <input 
               type="number" 
               id="parcelWeight" 
@@ -206,7 +212,7 @@
           </div>
 
           <div class="form-group">
-            <label for="estimatedValue">Estimated Value of Parcel (KSH)</label>
+            <label for="estimatedValue">Declared Parcel Value (KSH)</label>
             <div class="input-with-icon">
               <input
                 type="number"
@@ -225,57 +231,12 @@
             </div>
           </div>
           
-          <div class="form-group">
-            <label for="pricePerKg">Price per Kilogram</label>
-            <div class="input-with-icon">
-              <input 
-                type="number" 
-                id="pricePerKg" 
-                formControlName="pricePerKg"
-                placeholder="100.00"
-                step="0.01"
-                min="0.01"
-                [class.error]="isFieldInvalid('pricePerKg')"
-              >
-              <span class="currency-symbol">KSH</span>
-            </div>
-            <div class="error-message" *ngIf="getFieldError('pricePerKg')">
-              {{ getFieldError('pricePerKg') }}
-            </div>
-          </div>
-        </div>
-
-        <!-- Price Calculation Section -->
-        <div class="form-section price-calculation">
-          <h2 class="section-title">Price Calculation</h2>
-          <div class="price-details">
-            <div class="price-row">
-              <span class="price-label">Price per Kilogram:</span>
-              <span class="price-value">{{ getFormattedPricePerKg() }}</span>
-            </div>
-            <div class="price-row">
-              <span class="price-label">Parcel Weight:</span>
-              <span class="price-value">{{ deliveryForm.get('parcelWeight')?.value || 0 }} kg</span>
-            </div>
-            <div class="price-row">
-              <span class="price-label">Weight Price:</span>
-              <span class="price-value">{{ getFormattedWeightPrice() }}</span>
-            </div>
-            <div class="price-row">
-              <span class="price-label">Delivery Fee:</span>
-              <span class="price-value">{{ getFormattedDeliveryFee() }}</span>
-            </div>
-            <div class="price-row total">
-              <span class="price-label">Total Price:</span>
-              <span class="price-value total-price">{{ getFormattedTotalPrice() }}</span>
-            </div>
-          </div>
         </div>
 
         <!-- Form Actions -->
         <div class="form-actions">
           <button type="button" class="btn-secondary" (click)="switchTab('tracking')" [disabled]="!isDeliveryTabValid()">
-            Next: Location & Route
+            Next: Locations
             <i class="fas fa-arrow-right"></i>
           </button>
         </div>
@@ -285,24 +246,20 @@
       </form>
       </div>
 
-      <!-- Location & Route Tab -->
+      <!-- Locations Tab -->
       <div class="tab-content" *ngIf="activeTab === 'tracking'">
         <div class="location-content">
-          <h2>Location & Route Setup</h2>
+          <h2>Choose origin and destination</h2>
           
           <!-- Location Input Section -->
           <div class="form-section" [formGroup]="deliveryForm">
             <h3 class="section-title">Location Details</h3>
             
             <div class="location-grid">
-                          <div class="form-group address-input-group">
-  <label for="pickupRoute" hidden>Route</label>
-  <div class="address-input-container"><select id="pickupRoute" [value]="selectedPickupRouteId" (change)="onPickupRouteChange($event)"><option value="">Select route first</option><option *ngFor="let route of savedRoutes" [value]="route.id">{{route.name || (route.origin + ' → ' + route.destination)}}</option></select><i class="fas fa-route location-icon pickup-icon"></i></div>
-</div>
 <div class="form-group address-input-group">
   <label for="pickupLocation">Origin Transit Point</label>
   <div class="address-input-container" *ngIf="userRole === 'TRANSIT_OFFICER'"><input id="pickupLocation" [value]="assignedOriginTransitPoint?.name || 'Loading assigned transit point…'" readonly><i class="fas fa-map-marker-alt location-icon pickup-icon"></i></div>
-  <div class="address-input-container" *ngIf="userRole !== 'TRANSIT_OFFICER'"><select id="pickupLocation" [value]="selectedPickupTransitPointId" (change)="onPickupTransitPointChange($event)" [class.error]="isFieldInvalid('pickupLocation')"><option value="">Select origin transit point</option><option *ngFor="let point of pickupTransitPoints" [value]="point.id">{{point.name}}</option></select><i class="fas fa-map-marker-alt location-icon pickup-icon"></i></div>
+  <div class="address-input-container" *ngIf="userRole !== 'TRANSIT_OFFICER'"><select id="pickupLocation" [value]="selectedPickupTransitPointId" (change)="onPickupTransitPointChange($event)" [class.error]="isFieldInvalid('pickupLocation')"><option value="">Select origin transit point</option><option *ngFor="let point of customerTransitPoints" [value]="point.id">{{point.name}}</option></select><i class="fas fa-map-marker-alt location-icon pickup-icon"></i></div>
   <div class="error-message" *ngIf="getFieldError('pickupLocation')">{{ getFieldError('pickupLocation') }}</div>
 </div><div class="form-group address-input-group">
                 <label for="destination">Destination</label>
@@ -314,8 +271,8 @@
                     [class.error]="isFieldInvalid('destination')"
                   >
                     <option value="">Select destination transit point</option>
-                    <option *ngFor="let route of pickupTransitPoints" [value]="route.id" [disabled]="route.id === selectedPickupTransitPointId">
-                      {{ route.name || route.routeName || (route.origin + ' → ' + route.destination) }}
+                    <option *ngFor="let point of customerTransitPoints" [value]="point.id" [disabled]="point.id === selectedPickupTransitPointId">
+                      {{ point.name }}
                     </option>
                   </select>
                   <i class="fas fa-flag-checkered location-icon destination-icon"></i>
@@ -331,7 +288,12 @@
 
           <label class="check-row" [formGroup]="deliveryForm">
             <input type="checkbox" formControlName="requestLockerOnConfirmation">
-            Request a destination locker as soon as this parcel is confirmed
+            Request a destination locker after arrival
+          </label>
+          <label class="form-group" [formGroup]="deliveryForm" *ngIf="deliveryForm.get('requestLockerOnConfirmation')?.value">
+            Locker holding time (hours, maximum 72)
+            <input type="number" min="1" max="72" formControlName="lockerRequestedHours">
+            <small>The system selects a locker size from the parcel weight. A transit officer confirms the parcel fits before allocation.</small>
           </label>
 
           <!-- Route Information -->
@@ -438,8 +400,7 @@
                 <p><strong>Destination:</strong> {{ deliveryForm.get('destination')?.value || 'Not specified' }}</p>
                 <p><strong>Weight:</strong> {{ deliveryForm.get('parcelWeight')?.value || 0 }} kg</p>
                 <p><strong>Estimated value:</strong> KSH {{ deliveryForm.get('estimatedValue')?.value || 0 }}</p>
-                <p><strong>Price per kg:</strong> {{ getFormattedPricePerKg() }}</p>
-                <p><strong>Total Price:</strong> {{ getFormattedTotalPrice() }}</p>
+                <p><strong>Delivery fee:</strong> {{ getFormattedDeliveryFee() }}</p>
               </div>
             </div>
           </div>
@@ -447,7 +408,7 @@
           <div class="form-actions preview-actions">
             <button type="button" class="btn-secondary" (click)="switchTab('tracking')">
               <i class="fas fa-arrow-left"></i>
-              Back: Location & Route
+              Back: Locations
             </button>
             <button type="button" class="submit-btn" (click)="onSubmit()" [disabled]="deliveryForm.invalid || isSubmitting">
               <i class="fas fa-spinner fa-spin" *ngIf="isSubmitting"></i>

@@ -486,7 +486,7 @@ export class DriverParcelDetails implements OnInit {
     if (completedCount === 0) {
       newStatus = 'assigned';
     } else if (completedCount === 1) {
-      newStatus = 'collected';
+      newStatus = 'in_transit';
     }
 
     if (newStatus !== this.parcel.status) {
@@ -506,8 +506,8 @@ export class DriverParcelDetails implements OnInit {
     };
 
     // Add specific notes based on the action
-    if (newStatus === 'collected') {
-      statusUpdate.notes = 'Parcel physically collected from sender';
+    if (newStatus === 'in_transit') {
+      statusUpdate.notes = 'Parcel collected from sender and is now in transit';
       statusUpdate.currentLocation = this.parcel.pickupAddress;
     } else if (newStatus === 'delivered_to_recipient') {
       statusUpdate.notes = 'Parcel delivered to recipient';
@@ -519,7 +519,7 @@ export class DriverParcelDetails implements OnInit {
     this.parcelsService.updateParcelStatus(this.parcel.id, statusUpdate).subscribe({
       next: (updatedParcel) => {
         this.parcel = updatedParcel;
-        const actionText = newStatus === 'collected' ? 'Parcel collection confirmed' : 
+        const actionText = newStatus === 'in_transit' ? 'Parcel collected and is now in transit' : 
                           newStatus === 'delivered_to_recipient' ? 'Parcel delivered successfully' :
                           `Parcel status updated to ${newStatus}`;
         this.toastService.showSuccess(actionText);

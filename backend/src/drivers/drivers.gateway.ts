@@ -30,9 +30,17 @@ interface LocationUpdate {
   address?: string;
 }
 
+const websocketOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:4200',
+  'http://127.0.0.1:4200',
+  ...(process.env.NODE_ENV !== 'production'
+    ? [/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i]
+    : []),
+];
+
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:4200',
+    origin: websocketOrigins,
     credentials: true,
   },
   namespace: '/drivers',

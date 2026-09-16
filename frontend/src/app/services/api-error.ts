@@ -19,6 +19,12 @@ export function getApiErrorMessage(error: unknown): string {
   if (typeof payload === 'string' && payload.trim()) return payload;
   if (payload && typeof payload === 'object') {
     if (Array.isArray(payload.message)) return payload.message.join('. ');
+    if (
+      payload.message === 'Validation failed' &&
+      payload.details?.length
+    ) {
+      return payload.details.join('. ');
+    }
     if (payload.message) return payload.message;
     if (payload.details?.length) return payload.details.join('. ');
   }

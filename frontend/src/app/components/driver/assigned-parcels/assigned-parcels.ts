@@ -45,6 +45,7 @@ export class AssignedParcels implements OnInit {
   rejectionParcelId: string | null = null;
   rejectionReason = '';
   isRejecting = false;
+  acceptedParcelIds = new Set<string>();
 
   // Pagination
   currentPage = 1;
@@ -278,16 +279,23 @@ export class AssignedParcels implements OnInit {
     this.parcelsService.updateParcelStatus(parcelId, {
       status: 'collected',
       currentLocation: this.assignedParcels.find(parcel => parcel.id === parcelId)?.pickupAddress,
-      notes: 'Parcel physically collected from sender'
+      notes: 'Parcel collected by driver at the transit station'
     }).subscribe({
       next: () => {
-        this.toastService.showSuccess('Parcel collection confirmed');
+        this.toastService.showSuccess('Collection confirmed. Start the journey when ready.');
         this.loadAssignedParcels();
       },
       error: (error) => {
         console.error('Error confirming collection:', error);
         this.toastService.showError(error?.message || 'Failed to update parcel status');
       }
+    });
+  }
+
+  acceptAssignment(parcelId: string) {
+    this.driversService.acceptParcelAssignment(parcelId).subscribe({
+      next: () => { this.acceptedParcelIds.add(parcelId); this.toastService.showSuccess('Assignment accepted. You can now collect the parcel.'); },
+      error: (error: any) => this.toastService.showError(error?.message || 'Could not accept assignment'),
     });
   }
 
@@ -314,22 +322,6 @@ export class AssignedParcels implements OnInit {
       error: (error) => {
         console.error('Error starting delivery:', error);
         this.toastService.showError(error?.message || 'Failed to start delivery');
-      }
-    });
-  }
-
-  completeDelivery(parcelId: string) {
-    this.parcelsService.updateParcelStatus(parcelId, {
-      status: 'delivered_to_recipient',
-      notes: 'Parcel delivered to recipient; awaiting customer confirmation'
-    }).subscribe({
-      next: () => {
-        this.toastService.showSuccess('Delivery recorded; awaiting customer confirmation');
-        this.loadAssignedParcels(); // Reload data
-      },
-      error: (error) => {
-        console.error('Error completing delivery:', error);
-        this.toastService.showError(error?.message || 'Failed to complete delivery');
       }
     });
   }

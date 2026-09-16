@@ -35,16 +35,16 @@ export class AuthGuard implements CanActivate {
     if (user) {
       switch (user.role) {
         case 'CUSTOMER':
-          this.router.navigate(['/user']);
+          this.router.navigate(['/user/dashboard']);
           break;
         case 'DRIVER':
-          this.router.navigate(['/driver']);
+          this.router.navigate(['/driver/dashboard']);
           break;
         case 'ADMIN':
-          this.router.navigate(['/admin']);
+          this.router.navigate(['/admin/dashboard']);
           break;
         case 'TRANSIT_OFFICER':
-          this.router.navigate(['/profile']);
+          this.router.navigate(['/transit-officer/dashboard']);
           break;
         default:
           this.router.navigate(['/']);

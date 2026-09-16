@@ -75,6 +75,9 @@
   box-shadow: 0 6px 20px rgba(219, 187, 2, 0.4);
 }
 
+.hero-track-link { display: inline-flex; align-items: center; gap: 8px; width: fit-content; color: #475569; font-weight: 600; text-decoration: none; }
+.hero-track-link:hover { color: #dbbb02; }
+
 /* Mobile touch optimizations */
 @media (hover: none) and (pointer: coarse) {
   .cta-button:hover {

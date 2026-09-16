@@ -50,6 +50,9 @@
                 </div>
               </div>
               <div class="profile-actions">
+                <button class="status-action-btn" *ngIf="user.role === 'CUSTOMER' && user.isActive && !user.deletedAt" (click)="showUpgradeModal = true">
+                  <i class="fas fa-truck"></i> Upgrade to Driver
+                </button>
                 <button class="status-action-btn" (click)="openStatusModal()" [disabled]="isUpdatingStatus">
                   <i class="fas" [ngClass]="isUpdatingStatus ? 'fa-spinner fa-spin' : 'fa-cog'"></i>
                   {{ isUpdatingStatus ? 'Updating...' : 'Manage Status' }}
@@ -432,6 +435,29 @@
       </div>
     </div>
   </main>
+
+  <div class="modal-overlay" *ngIf="showUpgradeModal">
+    <form class="modal-content" #upgradeForm="ngForm" (ngSubmit)="upgradeForm.valid && upgradeToDriver()">
+      <div class="modal-header"><h3>Upgrade to Driver</h3></div>
+      <div class="modal-body upgrade-driver-fields">
+        <p>Upgrade <strong>{{ user?.name }}</strong> to a driver account. Enter their driver and vehicle details.</p>
+        <label for="upgrade-license">Driver's license number</label>
+        <input id="upgrade-license" name="licenseNumber" [(ngModel)]="driverDetails.licenseNumber" required minlength="5" maxlength="20" [disabled]="isUpgrading">
+        <label for="upgrade-vehicle">Vehicle type</label>
+        <select id="upgrade-vehicle" name="vehicleType" [(ngModel)]="driverDetails.vehicleType" required [disabled]="isUpgrading">
+          <option value="">Select vehicle type</option>
+          <option value="MOTORCYCLE">Motorcycle</option><option value="CAR">Car</option>
+          <option value="VAN">Van</option><option value="TRUCK">Truck</option>
+        </select>
+        <label for="upgrade-registration">Vehicle registration number (optional)</label>
+        <input id="upgrade-registration" name="vehicleNumber" [(ngModel)]="driverDetails.vehicleNumber" maxlength="30" [disabled]="isUpgrading">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" (click)="showUpgradeModal = false" [disabled]="isUpgrading">Cancel</button>
+        <button type="submit" class="btn-primary" [disabled]="upgradeForm.invalid || isUpgrading">{{ isUpgrading ? 'Upgrading...' : 'Upgrade to Driver' }}</button>
+      </div>
+    </form>
+  </div>
 
   <!-- Status Management Modal -->
   <div class="modal-overlay" *ngIf="showStatusModal" (click)="closeStatusModal()">

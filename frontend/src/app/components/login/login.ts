@@ -65,13 +65,13 @@ export class Login {
   }
 
   private redirectBasedOnRole(role: string) {
-    if (role === 'TRANSIT_OFFICER') {
-      this.router.navigate(['/profile']);
-      this.toastService.showSuccess('Welcome back! Your profile is ready.');
-      return;
-    }
-    // Redirect to home page so users can see the dynamic CTA button
-    this.router.navigate(['/']);
+    const dashboardRoutes: Record<string, string> = {
+      ADMIN: '/admin/dashboard',
+      CUSTOMER: '/user/dashboard',
+      DRIVER: '/driver/dashboard',
+      TRANSIT_OFFICER: '/transit-officer/dashboard',
+    };
+    this.router.navigate([dashboardRoutes[role] || '/']);
     this.toastService.showSuccess(`Welcome back! You can now ${this.getActionText(role)}.`);
   }
 

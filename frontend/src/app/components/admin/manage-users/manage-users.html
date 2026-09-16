@@ -27,11 +27,24 @@
           All Users
           <span class="badge" *ngIf="totalUsers > 0">{{ totalUsers }}</span>
         </button>
-        <button class="tab-button" [class.active]="activeTab === 'applications'" (click)="switchTab('applications')">
+        <button class="tab-button" [class.active]="activeTab === 'driver-upgrade'" (click)="switchTab('driver-upgrade')">
           <i class="fas fa-truck"></i>
-          Driver Applications
-          <span class="badge" *ngIf="pendingApplicationsCount > 0">{{ pendingApplicationsCount }}</span>
+          Create Driver
         </button>
+        <button class="tab-button" [class.active]="activeTab === 'transit-officer'" (click)="switchTab('transit-officer')"><i class="fas fa-user-shield"></i> Create Transit Officer</button>
+      </div>
+
+      <div class="tab-content" *ngIf="activeTab === 'transit-officer'">
+        <section class="driver-upgrade-workspace"><div class="upgrade-workspace-header"><div><h2>Create a transit officer account</h2><p>Create the account and assign the officer to one active transit point.</p></div></div>
+          <div class="driver-upgrade-form"><div class="upgrade-form-grid">
+            <div class="form-group"><label>Full name *</label><input [(ngModel)]="transitOfficerAccount.name"></div>
+            <div class="form-group"><label>Email *</label><input type="email" [(ngModel)]="transitOfficerAccount.email"></div>
+            <div class="form-group"><label>Phone number *</label><input [(ngModel)]="transitOfficerAccount.phone"></div>
+            <div class="form-group"><label>Temporary password *</label><input type="password" [(ngModel)]="transitOfficerAccount.password"></div>
+            <div class="form-group"><label>Address</label><input [(ngModel)]="transitOfficerAccount.address"></div>
+            <div class="form-group"><label>Assigned transit point *</label><select [(ngModel)]="transitOfficerAccount.transitPointId"><option value="">Select transit point</option><option *ngFor="let point of transitPoints" [value]="point.id">{{ point.name }}</option></select><small *ngIf="!transitPoints.length">Create a transit point in Operations first.</small></div>
+          </div><div class="upgrade-actions"><button type="button" class="btn-approve" (click)="createTransitOfficer()" [disabled]="isUpgradingCandidate"><i class="fas fa-user-shield"></i> Create Transit Officer</button></div></div>
+        </section>
       </div>
 
       <!-- Users Tab Content -->
@@ -58,6 +71,7 @@
             <option value="">Role</option>
               <option value="CUSTOMER">Customer</option>
               <option value="DRIVER">Driver</option>
+              <option value="TRANSIT_OFFICER">Transit Officer</option>
               <option value="ADMIN">Admin</option>
           </select>
           <button class="clear-filters-btn" (click)="clearFilters()">Clear Filters</button>
@@ -130,10 +144,15 @@
               </div>
               
               <!-- Action Button -->
-              <button class="view-profile-btn" (click)="$event.stopPropagation(); viewUserDetails(user.id)">
-                <i class="fas fa-eye"></i>
-                View Profile
-              </button>
+              <div class="user-card-actions">
+                <button class="view-profile-btn" (click)="$event.stopPropagation(); viewUserDetails(user.id)">
+                  <i class="fas fa-eye"></i>
+                  View Profile
+                </button>
+                <button class="suspend-user-btn" *ngIf="user.role !== 'ADMIN' && user.isActive" (click)="suspendUser(user, $event)" title="Suspend user" aria-label="Suspend user">
+                  <i class="fas fa-ban"></i>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -155,8 +174,41 @@
         </div>
       </div>
 
-      <!-- Driver Applications Tab Content -->
-      <div class="tab-content" *ngIf="activeTab === 'applications'">
+      <!-- Driver upgrade workspace -->
+      <div class="tab-content" *ngIf="activeTab === 'driver-upgrade'">
+        <section class="driver-upgrade-workspace">
+          <div class="upgrade-workspace-header">
+            <div>
+              <h2>Create a driver account</h2>
+              <p>Enter the driver’s contact, login, vehicle, and route details.</p>
+            </div>
+          </div>
+
+          <form #driverAccountForm="ngForm" (ngSubmit)="createDriverFromWorkspace()" class="driver-upgrade-form">
+            <div class="upgrade-form-grid">
+              <div class="form-group"><label>Full name *</label><input name="name" [(ngModel)]="driverAccount.name" required minlength="2"></div>
+              <div class="form-group"><label>Email *</label><input name="email" type="email" [(ngModel)]="driverAccount.email" required></div>
+              <div class="form-group"><label>Phone number *</label><input name="phone" [(ngModel)]="driverAccount.phone" required minlength="10"></div>
+              <div class="form-group"><label>Temporary password *</label><input name="password" type="password" [(ngModel)]="driverAccount.password" required minlength="8"></div>
+              <div class="form-group"><label>Address</label><input name="address" [(ngModel)]="driverAccount.address" maxlength="255"></div>
+              <div class="form-group"><label>Driver's licence number *</label><input name="licenseNumber" [(ngModel)]="driverAccount.licenseNumber" required minlength="5" maxlength="20"></div>
+              <div class="form-group"><label>Vehicle type *</label><select name="vehicleType" [(ngModel)]="driverAccount.vehicleType" required><option value="">Select vehicle type</option><option value="MOTORCYCLE">Motorcycle</option><option value="CAR">Car</option><option value="VAN">Van</option><option value="TRUCK">Truck</option></select></div>
+              <div class="form-group"><label>Vehicle registration number</label><input name="vehicleNumber" [(ngModel)]="driverAccount.vehicleNumber" maxlength="30" placeholder="Optional"></div>
+            </div>
+
+            <fieldset class="upgrade-routes"><legend>Available delivery routes <span>(select up to 3)</span></legend>
+              <p *ngIf="!availableRoutes.length" class="route-empty">No active routes are available. <button type="button" (click)="loadRoutes()">Reload routes</button></p>
+              <div class="upgrade-routes-grid">
+                <label *ngFor="let route of availableRoutes" class="upgrade-route-option"><input type="checkbox" [checked]="driverAccount.routesServed.includes(route.id)" (change)="toggleUpgradeRoute(route.id)"><span>{{ route.name || route.routeName || (route.origin + ' → ' + route.destination) }}</span></label>
+              </div>
+            </fieldset>
+
+            <div class="upgrade-actions"><button type="button" class="btn-approve" (click)="createDriverFromWorkspace()" [disabled]="isUpgradingCandidate"><i class="fas" [ngClass]="isUpgradingCandidate ? 'fa-spinner fa-spin' : 'fa-truck'"></i>{{ isUpgradingCandidate ? 'Creating...' : 'Create Driver Account' }}</button></div>
+          </form>
+        </section>
+
+        <!-- Kept only for legacy pending records; no longer reachable from the UI. -->
+        <div *ngIf="false">
         <!-- Loading State -->
         <div *ngIf="isLoadingApplications" class="loading-state">
           <div class="loading-spinner">
@@ -257,10 +309,12 @@
           <button (click)="setApplicationPage(currentApplicationPage + 1)" [disabled]="currentApplicationPage === totalApplicationPages">&gt;</button>
           </div>
         </div>
+        </div>
       </div>
     </div>
     </div>
   </main>
+  <div class="suspension-overlay" *ngIf="suspensionTarget" (click)="cancelSuspension()"><section class="suspension-dialog" (click)="$event.stopPropagation()" role="dialog" aria-modal="true"><div class="suspension-icon"><i class="fas fa-ban"></i></div><h2>Suspend {{ suspensionTarget.name }}?</h2><p>The user will lose access immediately and receive this reason by email.</p><label for="suspension-reason">Suspension reason <span>*</span></label><textarea id="suspension-reason" [(ngModel)]="suspensionReason" rows="4" maxlength="500" placeholder="Explain why this account is being suspended"></textarea><small>{{ suspensionReason.length }} / 500</small><div class="suspension-actions"><button type="button" (click)="cancelSuspension()" [disabled]="isSuspendingUser">Cancel</button><button type="button" class="confirm-suspension" (click)="confirmSuspension()" [disabled]="isSuspendingUser || !suspensionReason.trim()">{{ isSuspendingUser ? 'Suspending...' : 'Suspend account' }}</button></div></section></div>
 </div>
 
 <!-- Application Details Modal -->

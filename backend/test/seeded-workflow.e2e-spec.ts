@@ -25,4 +25,13 @@ describe('seeded reroute-to-locker workflow (e2e)', () => {
     expect(history.map(item => item.status)).toEqual(expect.arrayContaining([ParcelStatus.at_transit_point, ParcelStatus.in_transit, ParcelStatus.arrived_at_transit_point, ParcelStatus.at_destination, ParcelStatus.in_locker]));
     expect(await prisma.batch.count({ where: { OR: [{ batchNumber: 'DEMO-KISII-NBO-001' }, { batchNumber: 'DEMO-NBO-MERU-001' }] } })).toBe(2);
   });
+
+  it('exposes the full destination-to-locker sample case for UI verification', async () => {
+    const parcel = await prisma.parcel.findUniqueOrThrow({ where: { trackingNumber: 'SENDIT-DEMO-REROUTE-001' } });
+    const destination = await prisma.transitPoint.findFirstOrThrow({ where: { name: 'Meru Destination Hub' } });
+    const locker = await prisma.lockerAssignment.findFirstOrThrow({ where: { parcelId: parcel.id, collectedAt: null, cancelledAt: null } });
+    expect(parcel.currentTransitPointId).toBe(destination.id);
+    expect(parcel.status).toBe(ParcelStatus.in_locker);
+    expect(locker).toMatchObject({ parcelId: parcel.id });
+  });
 });

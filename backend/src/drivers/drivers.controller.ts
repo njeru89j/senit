@@ -16,14 +16,12 @@ import {
 import { DriversService } from './drivers.service';
 import {
   UpdateLocationDto,
-  DriverApplicationDto,
   AssignParcelDto,
   UpdateParcelStatusDto,
 } from '../users/dto';
 import { IdParamDto } from '../common/dto';
 import { createJoiValidationPipe } from '../common/pipes/joi-validation.pipe';
 import {
-  driverApplicationSchema,
   updateLocationSchema,
   assignParcelSchema,
   updateParcelStatusSchema,
@@ -81,6 +79,7 @@ export class DriversController {
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
       minimumRating?: number;
+      routeId?: string;
     },
   ) {
     return this.driversService.findAll(query);
@@ -116,21 +115,6 @@ export class DriversController {
     return this.driversService.updateLocation(params.id, updateLocationDto);
   }
 
-  @Post('apply')
-  @HttpCode(HttpStatus.CREATED)
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-  @UsePipes(createJoiValidationPipe(driverApplicationSchema))
-  @Roles('CUSTOMER', 'ADMIN')
-  applyForDriver(
-    @Body() driverApplicationDto: DriverApplicationDto,
-    @Request() req: { user: { sub: string } },
-  ) {
-    return this.driversService.applyForDriver(
-      req.user.sub,
-      driverApplicationDto,
-    );
-  }
-
   @Post('assign-parcel')
   @HttpCode(HttpStatus.OK)
   @UsePipes(createJoiValidationPipe(assignParcelSchema))
@@ -162,6 +146,13 @@ export class DriversController {
   @Roles('DRIVER')
   rejectParcelAssignment(@Param('parcelId') parcelId: string, @Body('reason') reason: string, @Request() req: { user: { sub: string } }) {
     return this.driversService.rejectParcelAssignment(parcelId, req.user.sub, reason);
+  }
+
+  @Post('parcels/:parcelId/accept')
+  @HttpCode(HttpStatus.OK)
+  @Roles('DRIVER')
+  acceptParcelAssignment(@Param('parcelId') parcelId: string, @Request() req: { user: { sub: string } }) {
+    return this.driversService.acceptParcelAssignment(parcelId, req.user.sub);
   }
 
   // Admin endpoints for managing driver applications

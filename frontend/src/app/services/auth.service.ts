@@ -424,10 +424,6 @@ export class AuthService {
     return this.isAdmin();
   }
 
-  canApplyAsDriver(): boolean {
-    return this.isCustomer();
-  }
-
   canCreateReviews(): boolean {
     return this.isCustomer();
   }

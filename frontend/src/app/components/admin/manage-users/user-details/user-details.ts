@@ -97,6 +97,28 @@ export class UserDetails implements OnInit {
     private adminService: AdminService
   ) {}
 
+  showUpgradeModal = false;
+  isUpgrading = false;
+  driverDetails = { licenseNumber: '', vehicleType: '', vehicleNumber: '' };
+
+  upgradeToDriver(): void {
+    if (!this.user || this.user.role !== 'CUSTOMER' || this.isUpgrading) return;
+    this.isUpgrading = true;
+    this.adminService.upgradeCustomerToDriver(this.user.id, this.driverDetails).subscribe({
+      next: (user) => {
+        this.user = user;
+        this.isUpgrading = false;
+        this.showUpgradeModal = false;
+        this.toastService.showSuccess('Customer account upgraded to driver');
+        this.loadUserStatsAndRoleData(user.id);
+      },
+      error: (error) => {
+        this.isUpgrading = false;
+        this.toastService.showError(error?.error?.message || 'Failed to upgrade customer account');
+      }
+    });
+  }
+
   ngOnInit() {
     console.log('🔄 UserDetails ngOnInit called');
     

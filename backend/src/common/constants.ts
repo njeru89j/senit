@@ -1,10 +1,11 @@
 // Delivery Fee Constants
 export const DELIVERY_FEE_CONFIG = {
-  BASE_FEE: 200, // KSH 200 base fee for any delivery
-  PER_KG_FEE: 100, // KSH 100 per kg
-  MIN_DISTANCE_FEE: 100, // Minimum distance fee
-  MAX_DISTANCE_FEE: 800, // Maximum distance fee
-  ROUNDING_INTERVAL: 50, // Round to nearest 50 KSH
+  MINIMUM_FEE: 300, // KSH 300 for parcels below 5 kg and KSH 5,000 declared value
+  LIGHT_WEIGHT_LIMIT_KG: 5,
+  LOW_DECLARED_VALUE_LIMIT: 5000,
+  BASE_PER_KG_FEE: 20,
+  DISTANCE_BAND_KM: 100,
+  DISTANCE_BAND_PER_KG_INCREASE: 5,
 } as const;
 
 // Parcel Status Constants

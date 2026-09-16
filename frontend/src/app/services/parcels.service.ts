@@ -78,7 +78,9 @@ export interface CreateParcelDto {
   pickupTransitPointId?: string;
   destinationTransitPointId?: string;
   requestLockerOnConfirmation?: boolean;
+  lockerRequestedMinutes?: number;
   weight: number;
+  pricePerKg?: number;
   description?: string;
   value?: number;
   deliveryInstructions?: string;
@@ -252,6 +254,10 @@ export class ParcelsService {
     ).pipe(
       catchError(error => this.handleError(error))
     );
+  }
+
+  getPublicTracking(trackingNumber: string): Observable<Pick<Parcel, 'trackingNumber' | 'status' | 'pickupAddress' | 'deliveryAddress' | 'currentLocation' | 'estimatedPickupTime' | 'estimatedDeliveryTime' | 'actualDeliveryTime' | 'updatedAt' | 'statusHistory'>> {
+    return this.http.get<any>(this.getApiUrl(`/public/parcels/tracking/${encodeURIComponent(trackingNumber.trim())}`));
   }
 
   updateParcel(id: string, updateParcelDto: UpdateParcelDto): Observable<Parcel> {

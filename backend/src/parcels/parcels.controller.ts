@@ -134,12 +134,17 @@ export class ParcelsController {
     @Query('weight') weight: number,
     @Query('pickupAddress') pickupAddress: string,
     @Query('deliveryAddress') deliveryAddress: string,
+    @Query('declaredValue') declaredValue: number = 0,
+    @Query('distanceKm') distanceKm: number = 0,
   ): number {
     try {
       return this.parcelsService.calculateDeliveryFee(
         weight,
         pickupAddress,
         deliveryAddress,
+        undefined,
+        declaredValue,
+        distanceKm,
       ) as number;
     } catch {
       return 0;

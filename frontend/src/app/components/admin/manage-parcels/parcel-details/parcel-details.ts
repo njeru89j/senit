@@ -23,6 +23,7 @@ interface ParcelDetailsData {
   price: string;
   currentLocation?: string;
   estimatedTime?: string;
+  routeId?: string;
   driver?: {
     id?: string;
     name: string;
@@ -171,6 +172,7 @@ export class ParcelDetails implements OnInit {
       weight: weight,
       dimensions: '25x15x8 cm',
       price: this.calculatePriceFromWeight(weight),
+      routeId: parcelDetails.routeId,
       driver: undefined, // Will be assigned later
       sender: {
         name: parcelDetails.senderName || 'Unknown Sender',
@@ -211,6 +213,7 @@ export class ParcelDetails implements OnInit {
       price: `KSH ${apiResponse.price || this.calculatePriceFromWeight(weight).replace('KSH ', '')}`,
       currentLocation: apiResponse.currentLocation,
       estimatedTime: this.calculateEstimatedTime(apiResponse.actualPickupTime || apiResponse.estimatedPickupTime, apiResponse.actualDeliveryTime || apiResponse.estimatedDeliveryTime),
+      routeId: apiResponse.routeId,
       driver: apiResponse.driverId ? await this.getDriverInfoById(apiResponse.driverId) : undefined,
       sender: {
         name: apiResponse.senderName || 'Unknown Sender',
@@ -545,7 +548,8 @@ export class ParcelDetails implements OnInit {
       weight: parseFloat(this.parcel.weight.replace(' kg', '')),
       price: parseFloat(this.parcel.price.replace('KSH ', '').replace(',', '')),
       senderName: this.parcel.sender.name,
-      recipientName: this.parcel.receiver.name
+      recipientName: this.parcel.receiver.name,
+      routeId: this.parcel.routeId
     };
 
     console.log('Navigating to assign driver with parcel details:', parcelDetails);
@@ -554,7 +558,7 @@ export class ParcelDetails implements OnInit {
     this.parcelsService.setTempParcelDetails(parcelDetails, false);
 
     // Navigate to assign driver page with parcel details
-    this.router.navigate(['/admin-assign-driver'], {
+    this.router.navigate([this.assignmentRoute], {
       state: { parcelDetails }
     });
   }
@@ -574,7 +578,8 @@ export class ParcelDetails implements OnInit {
       weight: parseFloat(this.parcel.weight.replace(' kg', '')),
       price: parseFloat(this.parcel.price.replace('KSH ', '').replace(',', '')),
       senderName: this.parcel.sender.name,
-      recipientName: this.parcel.receiver.name
+      recipientName: this.parcel.receiver.name,
+      routeId: this.parcel.routeId
     };
 
     console.log('Navigating to reassign driver with parcel details:', parcelDetails);
@@ -583,7 +588,7 @@ export class ParcelDetails implements OnInit {
     this.parcelsService.setTempParcelDetails(parcelDetails, true, this.parcel.driver?.id || undefined);
 
     // Navigate to assign driver page with parcel details and reassign flag
-    this.router.navigate(['/admin-assign-driver'], {
+    this.router.navigate([this.assignmentRoute], {
       state: { 
         parcelDetails,
         isReassignment: true,
@@ -594,6 +599,12 @@ export class ParcelDetails implements OnInit {
 
   goBack() {
     window.history.back();
+  }
+
+  private get assignmentRoute(): string {
+    return this.router.url.startsWith('/transit-officer')
+      ? '/transit-officer/assign-driver'
+      : '/admin-assign-driver';
   }
 
   private async updateParcelWithNewDriver(driverId: string, isReassignment: boolean = false) {

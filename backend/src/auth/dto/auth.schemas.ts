@@ -24,6 +24,11 @@ export const registerSchema = Joi.object({
   address: Joi.string().max(200).optional().messages({
     'string.max': 'Address cannot exceed 200 characters',
   }),
+  // Accept and discard fields sent by older frontend bundles. Public
+  // registration always assigns CUSTOMER in AuthService.
+  role: Joi.string().valid('CUSTOMER').optional().strip(),
+  routesServed: Joi.any().optional().strip(),
+  currentRouteId: Joi.any().optional().strip(),
 })
   .unknown(false);
 

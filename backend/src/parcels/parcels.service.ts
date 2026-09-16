@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { Prisma, Parcel, ParcelStatus, User } from '@prisma/client';
+import { BatchStatus, Prisma, Parcel, ParcelStatus, User } from '@prisma/client';
 import {
   CreateParcelDto,
   UpdateParcelDto,
@@ -19,7 +19,6 @@ import { UserResponseDto } from '../users/dto';
 import { MailerService } from '../mailer/mailer.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DELIVERY_FEE_CONFIG } from '../common/constants';
-import { canTransitionParcel } from '../common/parcel-lifecycle';
 import { createHmac, randomBytes } from 'crypto';
 import * as QRCode from 'qrcode';
 
@@ -49,8 +48,39 @@ export class ParcelsService {
     const target = this.normalizePlace(destination);
     const routeLocations = routes.map((route) => ({
       route,
-      locations: [route.origin, ...memberships.filter((item) => item.routeId === route.id).map((item) => pointById.get(item.transitPointId)?.name).filter((name): name is string => !!name), route.destination],
+      locations: [
+        route.origin,
+        ...memberships
+          .filter((item) => item.routeId === route.id)
+          .map((item) => pointById.get(item.transitPointId)?.name)
+          .filter((name): name is string => !!name),
+        ...points
+          .filter(
+            (point) =>
+              point.routeId === route.id &&
+              !memberships.some(
+                (item) =>
+                  item.routeId === route.id &&
+                  item.transitPointId === point.id,
+              ),
+          )
+          .map((point) => point.name),
+        route.destination,
+      ],
     }));
+    const graph = new Map<string, Array<{ place: string; routeId: string }>>();
+    const connect = (from: string, to: string, routeId: string) => {
+      const key = this.normalizePlace(from);
+      const edges = graph.get(key) ?? [];
+      edges.push({ place: to, routeId });
+      graph.set(key, edges);
+    };
+    for (const entry of routeLocations) {
+      for (let index = 0; index < entry.locations.length - 1; index++) {
+        connect(entry.locations[index], entry.locations[index + 1], entry.route.id);
+        connect(entry.locations[index + 1], entry.locations[index], entry.route.id);
+      }
+    }
     const queue: Array<{ place: string; firstRouteId?: string }> = [{ place: pickup.name }];
     const visited = new Set<string>();
     while (queue.length) {
@@ -59,10 +89,8 @@ export class ParcelsService {
       if (visited.has(normalized)) continue;
       visited.add(normalized);
       if ((normalized === target || normalized.includes(target) || target.includes(normalized)) && current.firstRouteId) return current.firstRouteId;
-      for (const entry of routeLocations) {
-        const index = entry.locations.findIndex((place) => this.normalizePlace(place) === normalized);
-        if (index < 0) continue;
-        for (const next of entry.locations.slice(index + 1)) queue.push({ place: next, firstRouteId: current.firstRouteId ?? entry.route.id });
+      for (const edge of graph.get(normalized) ?? []) {
+        queue.push({ place: edge.place, firstRouteId: current.firstRouteId ?? edge.routeId });
       }
     }
     throw new BadRequestException(`No interconnected active route was found from ${pickup.name} to ${destination}`);
@@ -73,13 +101,20 @@ export class ParcelsService {
   ): Promise<Prisma.ParcelWhereInput> {
     const assignments = await this.prisma.transitPointOfficer.findMany({ where: { officerId }, select: { transitPointId: true } });
     const points = await this.prisma.transitPoint.findMany({
-      where: { id: { in: assignments.map((item) => item.transitPointId) }, active: true },
-      select: { id: true, name: true },
+      where: {
+        active: true,
+        OR: [
+          { officerId },
+          { id: { in: assignments.map((item) => item.transitPointId) } },
+        ],
+      },
+      select: { id: true, name: true, routeId: true },
     });
     const pointIds = points.map((point) => point.id);
     const pointNames = points.map((point) => point.name).filter(Boolean);
+    const routeIds = [...new Set(points.map((point) => point.routeId).filter((id): id is string => !!id))];
 
-    if (!pointIds.length && !pointNames.length) {
+    if (!pointIds.length && !pointNames.length && !routeIds.length) {
       return { id: { in: [] } };
     }
 
@@ -87,6 +122,7 @@ export class ParcelsService {
       OR: [
         ...(pointIds.length ? [{ currentTransitPointId: { in: pointIds } }] : []),
         ...(pointNames.length ? [{ currentLocation: { in: pointNames } }] : []),
+        ...(routeIds.length ? [{ routeId: { in: routeIds } }] : []),
       ],
     };
   }
@@ -117,11 +153,15 @@ export class ParcelsService {
       pickupTransitPointId,
       destinationTransitPointId,
       requestLockerOnConfirmation,
+      lockerRequestedMinutes,
       weight,
+      pricePerKg,
       description,
       value,
       deliveryInstructions,
     } = createParcelDto;
+    let pickupTransitPoint: { name: string; latitude: number | null; longitude: number | null } | null = null;
+    let destinationTransitPoint: { name: string; latitude: number | null; longitude: number | null } | null = null;
 
     if (userRole === 'TRANSIT_OFFICER' && userId) {
       const assignment = await this.prisma.transitPointOfficer.findUnique({ where: { officerId: userId } });
@@ -130,17 +170,21 @@ export class ParcelsService {
     }
 
     if (destinationTransitPointId) {
-      const destinationPoint = await this.prisma.transitPoint.findFirst({
+      destinationTransitPoint = await this.prisma.transitPoint.findFirst({
         where: { id: destinationTransitPointId, active: true },
-        select: { name: true },
+        select: { name: true, latitude: true, longitude: true },
       });
-      if (!destinationPoint) throw new BadRequestException('Selected destination transit point is not available');
-      deliveryAddress = destinationPoint.name;
+      if (!destinationTransitPoint) throw new BadRequestException('Selected destination transit point is not available');
+      deliveryAddress = destinationTransitPoint.name;
     }
 
     if (pickupTransitPointId) {
       routeId = await this.determineRoute(pickupTransitPointId, deliveryAddress);
-      pickupAddress = (await this.prisma.transitPoint.findUnique({ where: { id: pickupTransitPointId }, select: { name: true } }))?.name ?? pickupAddress;
+      pickupTransitPoint = await this.prisma.transitPoint.findUnique({
+        where: { id: pickupTransitPointId },
+        select: { name: true, latitude: true, longitude: true },
+      });
+      pickupAddress = pickupTransitPoint?.name ?? pickupAddress;
     }
 
     if (routeId) {
@@ -182,7 +226,8 @@ export class ParcelsService {
     const trackingNumber = await this.generateTrackingNumber();
 
     // Calculate delivery fee based on weight and distance
-    const deliveryFee = this.calculateDeliveryFee(weight, pickupAddress, deliveryAddress);
+    const distanceKm = this.calculateTransitPointDistance(pickupTransitPoint, destinationTransitPoint);
+    const deliveryFee = this.calculateDeliveryFee(weight, pickupAddress, deliveryAddress, undefined, value, distanceKm);
 
     // Check if recipient is a registered user
     let recipientId: string | undefined = undefined;
@@ -225,16 +270,35 @@ export class ParcelsService {
         value,
         deliveryInstructions,
         deliveryFee,
-        status: 'created',
+        // Customer parcels must be physically received at their selected transit
+        // point before a driver can be assigned.
+        // A transit officer has physically accepted an over-the-counter parcel;
+        // it can move directly to driver assignment. Customer parcels still need
+        // the origin-station handover confirmation.
+        status: userRole === 'CUSTOMER' ? 'awaiting_confirmation' : userRole === 'TRANSIT_OFFICER' ? 'awaiting_driver_assignment' : 'created',
+        currentTransitPointId: pickupTransitPointId,
+        currentLocation: userRole === 'CUSTOMER' || userRole === 'TRANSIT_OFFICER' ? pickupAddress : undefined,
       },
         include: { sender: true, recipient: true, driver: true },
       });
       const signature = createHmac('sha256', signedData).update(`${created.id}:${sealIdentifier}`).digest('hex');
       const qrPayload = JSON.stringify({ type: 'SENDIT_SEAL', parcelId: created.id, identifier: sealIdentifier, signature });
       await tx.parcelSeal.create({ data: { parcelId: created.id, identifier: sealIdentifier, signedData, createdBy: userId ?? created.id } });
+      await tx.parcelStatusHistory.create({
+        data: {
+          parcelId: created.id,
+          status: created.status,
+          location: pickupAddress,
+          updatedBy: userId,
+          notes: userRole === 'CUSTOMER'
+            ? 'Awaiting physical confirmation at the origin transit point. The parcel expires after 24 hours if it is not received.'
+            : userRole === 'TRANSIT_OFFICER' ? 'Parcel accepted at the transit station and ready for driver assignment.' : 'Parcel created.',
+        },
+      });
       const lockerRequester = recipientId ?? userId;
       if (requestLockerOnConfirmation && lockerRequester) {
-        await tx.lockerRequest.create({ data: { parcelId: created.id, requestedBy: lockerRequester, size: 'MEDIUM' } });
+        const lockerSize = weight <= 2 ? 'SMALL' : weight <= 10 ? 'MEDIUM' : weight <= 25 ? 'LARGE' : 'EXTRA_LARGE';
+        await tx.lockerRequest.create({ data: { parcelId: created.id, requestedBy: lockerRequester, size: lockerSize, requestedMinutes: lockerRequestedMinutes ?? 1440 } });
       }
       await tx.auditLog.create({ data: { userId, action: 'PARCEL_CREATED_WITH_SECURITY_SEAL', entityType: 'Parcel', entityId: created.id, after: { identifier: sealIdentifier } } });
       return { parcel: created, qrValue: qrPayload };
@@ -590,6 +654,30 @@ export class ParcelsService {
     return this.mapToParcelResponse(parcel);
   }
 
+  async findPublicTrackingByNumber(trackingNumber: string) {
+    const parcel = await this.prisma.parcel.findFirst({
+      where: { trackingNumber, deletedAt: null },
+      select: {
+        trackingNumber: true,
+        status: true,
+        pickupAddress: true,
+        deliveryAddress: true,
+        currentLocation: true,
+        estimatedPickupTime: true,
+        estimatedDeliveryTime: true,
+        actualDeliveryTime: true,
+        updatedAt: true,
+        statusHistory: {
+          orderBy: { timestamp: 'desc' },
+          take: 8,
+          select: { status: true, location: true, notes: true, timestamp: true },
+        },
+      },
+    });
+    if (!parcel) throw new NotFoundException('Parcel not found');
+    return parcel;
+  }
+
   // Update parcel
   async update(
     id: string,
@@ -645,12 +733,31 @@ export class ParcelsService {
       throw new NotFoundException('Parcel not found or not assigned to you');
     }
 
-    // Validate status transition
-    if (!this.isValidStatusTransition(parcel.status, status)) {
-      throw new BadRequestException(
-        `Invalid status transition from ${parcel.status} to ${status}`,
-      );
+    // Drivers may only confirm physical collection and departure; onward
+    // movement past that (arrival, delivery, completion) is verified by
+    // transit officers or the recipient, never declared by the driver.
+    const collecting = parcel.status === ParcelStatus.assigned && status === ParcelStatus.collected;
+    const departing = parcel.status === ParcelStatus.collected && status === ParcelStatus.in_transit;
+    if (!collecting && !departing) {
+      throw new BadRequestException('Drivers may only confirm collection and departure');
     }
+
+    // A driver starts a journey from the assigned-parcels screen, rather than
+    // from the batch screen. Keep the operational batch in sync so the next
+    // transit point can see the incoming load immediately.
+    const driverBatches = departing
+      ? await this.prisma.batch.findMany({
+          where: { driverId, status: { in: [BatchStatus.CREATED, BatchStatus.IN_TRANSIT] } },
+          select: { id: true, status: true },
+        })
+      : [];
+    const batchMembership = driverBatches.length
+      ? await this.prisma.batchParcel.findFirst({
+          where: { parcelId: id, removedAt: null, batchId: { in: driverBatches.map((batch) => batch.id) } },
+          orderBy: { addedAt: 'desc' },
+        })
+      : null;
+    const departureBatch = batchMembership ? driverBatches.find((batch) => batch.id === batchMembership.batchId) : null;
 
     // Prepare update data
     const confirmedLocation = status === 'collected'
@@ -666,16 +773,34 @@ export class ParcelsService {
     // Set timestamps based on status
     if (status === 'collected' && !parcel.actualPickupTime) {
       updateData.actualPickupTime = new Date();
-    } else if (
-      status === 'delivered_to_recipient' &&
-      !parcel.actualDeliveryTime
-    ) {
-      updateData.actualDeliveryTime = new Date();
-      updateData.deliveredToRecipient = true;
     }
 
     // Parcel, history, and audit must succeed or fail together.
     const updatedParcel = await this.prisma.$transaction(async (tx) => {
+      if (batchMembership) {
+        if (!batchMembership.loadedAt) {
+          await tx.batchParcel.update({
+            where: { id: batchMembership.id },
+            data: { loadedAt: new Date(), loadedBy: driverId },
+          });
+        }
+
+        if (departureBatch?.status === BatchStatus.CREATED) {
+          await tx.batch.update({
+            where: { id: batchMembership.batchId },
+            data: { status: BatchStatus.IN_TRANSIT },
+          });
+          await tx.batchEvent.create({
+            data: {
+              batchId: batchMembership.batchId,
+              createdBy: driverId,
+              type: 'DEPARTED',
+              notes: 'Driver started delivery from assigned parcels.',
+            },
+          });
+        }
+      }
+
       const updated = await tx.parcel.update({
         where: { id },
         data: updateData,
@@ -1854,15 +1979,8 @@ export class ParcelsService {
     return trackingNumber;
   }
 
-  private isValidStatusTransition(
-    currentStatus: string,
-    newStatus: string,
-  ): boolean {
-    return canTransitionParcel(currentStatus as ParcelStatus, newStatus as ParcelStatus);
-  }
-
   // Helper method to map parcel status to notification type
-  private mapStatusToNotificationType(status: string): 
+  private mapStatusToNotificationType(status: string):
     | 'PARCEL_CREATED'
     | 'PARCEL_ASSIGNED'
     | 'PARCEL_PICKED_UP'
@@ -1879,7 +1997,7 @@ export class ParcelsService {
       'delivered': 'PARCEL_DELIVERED',
       'completed': 'PARCEL_COMPLETED',
     };
-    
+
     return statusMap[status] || 'PARCEL_CREATED';
   }
 
@@ -1981,7 +2099,9 @@ export class ParcelsService {
   }
 
   /**
-   * Calculate delivery fee based on weight and estimated distance
+   * Parcels below 5 kg with a declared value below KSH 5,000 cost KSH 300.
+   * All other parcels cost KSH 300 plus their weight at KSH 20/kg, increasing
+   * by KSH 5/kg for every completed 100 km of the trip.
    * @param weight - Parcel weight in kg
    * @param pickupAddress - Pickup address
    * @param deliveryAddress - Delivery address
@@ -1991,33 +2111,39 @@ export class ParcelsService {
     weight: number,
     pickupAddress: string,
     deliveryAddress: string,
+    _pricePerKg?: number,
+    declaredValue: number = 0,
+    distanceKm: number = 0,
   ): number {
-    const baseFee = 500; // Base delivery fee in KES
-    const weightFee = weight * 100; // 100 KES per kg
-    const distanceFee = this.estimateDistanceFee(pickupAddress, deliveryAddress);
-    
-    return baseFee + weightFee + distanceFee;
+    const parcelWeight = Math.max(0, Number(weight) || 0);
+    const parcelValue = Math.max(0, Number(declaredValue) || 0);
+
+    if (
+      parcelWeight < DELIVERY_FEE_CONFIG.LIGHT_WEIGHT_LIMIT_KG &&
+      parcelValue < DELIVERY_FEE_CONFIG.LOW_DECLARED_VALUE_LIMIT
+    ) {
+      return DELIVERY_FEE_CONFIG.MINIMUM_FEE;
+    }
+
+    const distanceBands = Math.floor(Math.max(0, Number(distanceKm) || 0) / DELIVERY_FEE_CONFIG.DISTANCE_BAND_KM);
+    const perKgFee = DELIVERY_FEE_CONFIG.BASE_PER_KG_FEE
+      + distanceBands * DELIVERY_FEE_CONFIG.DISTANCE_BAND_PER_KG_INCREASE;
+    return Math.round(DELIVERY_FEE_CONFIG.MINIMUM_FEE + parcelWeight * perKgFee);
   }
 
-  /**
-   * Estimate distance fee based on address complexity
-   * This is a simplified version - in a real app, you'd use geocoding APIs
-   */
-  private estimateDistanceFee(
-    pickupAddress: string,
-    deliveryAddress: string,
+  private calculateTransitPointDistance(
+    pickup: { latitude: number | null; longitude: number | null } | null,
+    destination: { latitude: number | null; longitude: number | null } | null,
   ): number {
-    // Simple estimation based on address length and complexity
-    const pickupComplexity = pickupAddress.length / 10;
-    const deliveryComplexity = deliveryAddress.length / 10;
-
-    // Base distance fee
-    let distanceFee = DELIVERY_FEE_CONFIG.MIN_DISTANCE_FEE;
-
-    // Add complexity-based fee
-    distanceFee += (pickupComplexity + deliveryComplexity) * 25;
-
-    // Cap the distance fee at maximum
-    return Math.min(distanceFee, DELIVERY_FEE_CONFIG.MAX_DISTANCE_FEE);
+    if (pickup?.latitude == null || pickup?.longitude == null || destination?.latitude == null || destination?.longitude == null) {
+      return 0;
+    }
+    const toRadians = (degrees: number) => degrees * Math.PI / 180;
+    const latitudeDifference = toRadians(destination.latitude - pickup.latitude);
+    const longitudeDifference = toRadians(destination.longitude - pickup.longitude);
+    const a = Math.sin(latitudeDifference / 2) ** 2
+      + Math.cos(toRadians(pickup.latitude)) * Math.cos(toRadians(destination.latitude))
+      * Math.sin(longitudeDifference / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 }

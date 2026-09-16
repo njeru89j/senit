@@ -131,6 +131,7 @@ export class DriversService {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     routeId?: string;
+    isAvailable?: boolean;
   } = {}): Observable<DriversResponse> {
     this.checkAuthentication();
     
@@ -190,7 +191,7 @@ export class DriversService {
   assignParcel(assignParcelDto: AssignParcelDto): Observable<AssignParcelResponse> {
     this.checkAuthentication();
     return this.http.post<AssignParcelResponse>(
-      this.getApiUrl('/drivers/assign-parcel'),
+      this.getApiUrl('/admin/parcels/assign'),
       assignParcelDto,
       { headers: this.getHeaders() }
     ).pipe(
@@ -201,6 +202,12 @@ export class DriversService {
   rejectParcelAssignment(parcelId: string, reason: string): Observable<any> {
     this.checkAuthentication();
     return this.http.post<any>(this.getApiUrl(`/drivers/parcels/${parcelId}/reject`), { reason }, { headers: this.getHeaders() })
+      .pipe(catchError(error => this.handleError(error)));
+  }
+
+  acceptParcelAssignment(parcelId: string): Observable<any> {
+    this.checkAuthentication();
+    return this.http.post<any>(this.getApiUrl(`/drivers/parcels/${parcelId}/accept`), {}, { headers: this.getHeaders() })
       .pipe(catchError(error => this.handleError(error)));
   }
 
@@ -215,16 +222,26 @@ export class DriversService {
     );
   }
 
-  getAvailableDrivers(): Observable<DriversResponse> {
+  getAvailableDrivers(routeId?: string, useOfficerScope = false): Observable<DriversResponse> {
     this.checkAuthentication();
     console.log('🚗 Getting available drivers...');
     const query = {
       limit: 50,
       sortBy: 'averageRating',
-      sortOrder: 'desc' as const
+      sortOrder: 'desc' as const,
+      ...(routeId ? { routeId } : {})
     };
     console.log('🔍 Query parameters:', query);
-    return this.getDrivers(query);
+    if (!useOfficerScope) {
+      return this.getDrivers(query);
+    }
+
+    let params = new HttpParams().set('limit', '50');
+    if (routeId) params = params.set('routeId', routeId);
+    return this.http.get<DriversResponse>(this.getApiUrl('/admin/drivers'), {
+      headers: this.getHeaders(),
+      params,
+    }).pipe(catchError(error => this.handleError(error)));
   }
 
   updateDriverLocation(driverId: string, locationData: { currentLat: number; currentLng: number }): Observable<any> {

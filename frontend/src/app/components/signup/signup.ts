@@ -82,7 +82,9 @@ export class Signup implements OnInit {
 
 
   onSubmit() {
-    this.signupData.role = 'CUSTOMER';
+    this.signupData.name = this.signupData.name.trim();
+    this.signupData.email = this.signupData.email.trim().toLowerCase();
+    this.signupData.phone = this.signupData.phone?.trim();
 
     // Validate form
     if (!this.signupData.name || !this.signupData.email || !this.signupData.password || !this.signupData.phone) {
@@ -116,7 +118,15 @@ export class Signup implements OnInit {
     this.isLoading = true;
 
     // Call auth service
-    this.authService.register(this.signupData).subscribe({
+    const registrationData: CreateUserDto = {
+      name: this.signupData.name,
+      email: this.signupData.email,
+      password: this.signupData.password,
+      phone: this.signupData.phone,
+      ...(this.signupData.address ? { address: this.signupData.address.trim() } : {}),
+    };
+
+    this.authService.register(registrationData).subscribe({
       next: (response) => {
         this.isLoading = false;
         console.log('Registration successful:', response);

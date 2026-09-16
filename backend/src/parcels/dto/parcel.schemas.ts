@@ -58,6 +58,7 @@ export const createParcelSchema = Joi.object({
   }),
   destinationTransitPointId: Joi.string().trim().optional(),
   requestLockerOnConfirmation: Joi.boolean().optional(),
+  lockerRequestedMinutes: Joi.number().integer().min(60).max(4320).optional(),
   weight: Joi.number().positive().max(1000).required().messages({
     'number.base': 'Weight must be a number',
     'number.positive': 'Weight must be positive',

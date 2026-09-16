@@ -81,6 +81,12 @@ export class SidebarComponent implements OnInit, AfterViewInit, OnDestroy {
     },
     // Customer-specific items
     {
+      icon: 'fas fa-plus-circle',
+      label: 'Create Delivery',
+      route: '/user/create-parcel',
+      roles: ['CUSTOMER'],
+    },
+    {
       icon: 'fas fa-box', // parcel icon
       label: 'My Parcels',
       route: '/user/parcels',
