@@ -211,23 +211,54 @@
             </div>
           </div>
 
-          <div class="form-group">
-            <label for="estimatedValue">Declared Parcel Value (KSH)</label>
-            <div class="input-with-icon">
-              <input
-                type="number"
-                id="estimatedValue"
-                formControlName="estimatedValue"
-                placeholder="Enter estimated parcel value"
-                step="1"
-                min="1"
-                max="100000"
-                [class.error]="isFieldInvalid('estimatedValue')"
-              >
-              <span class="currency-symbol">KSH</span>
+          <div class="parcel-value-category-grid">
+            <div class="form-group">
+              <label for="estimatedValue">Declared Parcel Value (KSH)</label>
+              <div class="input-with-icon">
+                <input
+                  type="number"
+                  id="estimatedValue"
+                  formControlName="estimatedValue"
+                  placeholder="Enter estimated parcel value"
+                  step="1"
+                  min="1"
+                  max="100000"
+                  [class.error]="isFieldInvalid('estimatedValue')"
+                >
+                <span class="currency-symbol">KSH</span>
+              </div>
+              <div class="error-message" *ngIf="getFieldError('estimatedValue')">
+                {{ getFieldError('estimatedValue') }}
+              </div>
             </div>
-            <div class="error-message" *ngIf="getFieldError('estimatedValue')">
-              {{ getFieldError('estimatedValue') }}
+            <div class="form-group">
+              <label for="parcelCategory">Parcel Category</label>
+              <select id="parcelCategory" formControlName="parcelCategory" [class.error]="isFieldInvalid('parcelCategory')">
+                <option value="DURABLE">Durable</option>
+                <option value="FRAGILE">Fragile — minimum fee KSH 500</option>
+                <option value="ELECTRONICS">Electronics — minimum fee KSH 500</option>
+                <option value="DOCUMENTS">Documents</option>
+                <option value="CLOTHING">Clothing</option>
+                <option value="PERISHABLE">Perishable</option>
+                <option value="OTHER">Other</option>
+              </select>
+              <div class="field-hint" *ngIf="deliveryForm.get('parcelCategory')?.value === 'FRAGILE' || deliveryForm.get('parcelCategory')?.value === 'ELECTRONICS'">Fragile and electronics parcels have a minimum delivery fee of KSH 500.</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="description">Parcel Description <span class="optional-label">(Optional)</span></label>
+            <textarea
+              id="description"
+              formControlName="description"
+              rows="4"
+              maxlength="500"
+              placeholder="Describe the parcel contents, e.g. documents, clothes, or electronics"
+              [class.error]="isFieldInvalid('description')"
+            ></textarea>
+            <div class="field-hint">{{ deliveryForm.get('description')?.value?.length || 0 }}/500</div>
+            <div class="error-message" *ngIf="getFieldError('description')">
+              {{ getFieldError('description') }}
             </div>
           </div>
           
@@ -286,14 +317,15 @@
 
           </div>
 
-          <label class="check-row" [formGroup]="deliveryForm">
-            <input type="checkbox" formControlName="requestLockerOnConfirmation">
-            Request a destination locker after arrival
-          </label>
-          <label class="form-group" [formGroup]="deliveryForm" *ngIf="deliveryForm.get('requestLockerOnConfirmation')?.value">
-            Locker holding time (hours, maximum 72)
+          <fieldset class="collection-choice" [formGroup]="deliveryForm">
+            <legend>How will the recipient collect it?</legend>
+            <label class="check-row"><input type="radio" formControlName="collectionMethod" value="STATION_COLLECTION"> Station collection — collect at the destination counter within 12 hours</label>
+            <label class="check-row"><input type="radio" formControlName="collectionMethod" value="SMART_LOCKER"> Smart locker — a locker is assigned automatically on arrival and the code is sent to the recipient</label>
+            <small>If no suitable locker is free on arrival, the parcel waits at the station counter instead. Parcels not collected within 12 hours move to a locker when one is free.</small>
+          </fieldset>
+          <label class="form-group" [formGroup]="deliveryForm" *ngIf="deliveryForm.get('collectionMethod')?.value === 'SMART_LOCKER'">
+            Locker holding time once placed (hours, maximum 72)
             <input type="number" min="1" max="72" formControlName="lockerRequestedHours">
-            <small>The system selects a locker size from the parcel weight. A transit officer confirms the parcel fits before allocation.</small>
           </label>
 
           <!-- Route Information -->
@@ -400,6 +432,8 @@
                 <p><strong>Destination:</strong> {{ deliveryForm.get('destination')?.value || 'Not specified' }}</p>
                 <p><strong>Weight:</strong> {{ deliveryForm.get('parcelWeight')?.value || 0 }} kg</p>
                 <p><strong>Estimated value:</strong> KSH {{ deliveryForm.get('estimatedValue')?.value || 0 }}</p>
+                <p><strong>Category:</strong> {{ deliveryForm.get('parcelCategory')?.value || 'Not specified' }}</p>
+                <p><strong>Description:</strong> {{ deliveryForm.get('description')?.value || 'Not specified' }}</p>
                 <p><strong>Delivery fee:</strong> {{ getFormattedDeliveryFee() }}</p>
               </div>
             </div>

@@ -8,6 +8,7 @@ import { MapMarkerType } from '../../../../types/map.types';
 import { SidebarComponent } from '../../../shared/sidebar/sidebar';
 import { DriversService, Driver, AssignParcelDto } from '../../../../services/drivers.service';
 import { ParcelsService } from '../../../../services/parcels.service';
+import { OperationsService } from '../../../../services/operations.service';
 import * as L from 'leaflet';
 
 interface ParcelDetails {
@@ -45,7 +46,8 @@ export class AssignDriver implements OnInit, OnDestroy {
 
   assignForm: FormGroup;
   availableDrivers: DriverWithSelection[] = [];
-  filteredDrivers: DriverWithSelection[] = [];
+    filteredDrivers: DriverWithSelection[] = [];
+  eligibilityNote = '';
   selectedDriver: DriverWithSelection | null = null;
   isLoading: boolean = false;
   isReassignment: boolean = false;
@@ -75,8 +77,9 @@ export class AssignDriver implements OnInit, OnDestroy {
     private toastService: ToastService,
     private router: Router,
     private mapService: MapService,
-    private driversService: DriversService,
-    private parcelsService: ParcelsService
+        private driversService: DriversService,
+    private parcelsService: ParcelsService,
+    private operationsService: OperationsService,
   ) {
     this.assignForm = this.fb.group({
       vehicleType: ['All'],
@@ -166,10 +169,11 @@ export class AssignDriver implements OnInit, OnDestroy {
           console.log('🔄 Reassignment mode: Excluded current driver', this.currentDriverId);
         }
         
-        this.filteredDrivers = [...this.availableDrivers];
+                this.filteredDrivers = [...this.availableDrivers];
         this.totalDrivers = this.availableDrivers.length;
         this.currentPage = 1;
         this.isLoading = false;
+        this.annotateEligibility();
         console.log('📦 Loaded drivers:', this.availableDrivers);
         console.log('📊 Total drivers found:', this.availableDrivers.length);
         
@@ -270,6 +274,44 @@ export class AssignDriver implements OnInit, OnDestroy {
   // Helper method for template
   get endIndex(): number {
     return Math.min(this.currentPage * this.itemsPerPage, this.totalDrivers);
+  }
+
+    /**
+   * Only drivers with an open trip that passes the pickup and drop-off in the right direction, with room,
+   * can take the parcel. The server evaluates this; drivers are sorted by its ranking.
+   */
+  private annotateEligibility() {
+    const parcelId = this.parcelDetails?.id;
+    if (!parcelId) return;
+    this.operationsService.journey(parcelId).subscribe({
+      next: (journey: any) => {
+        const leg = journey?.internal?.legs?.find((item: any) => item.status === 'AWAITING_DRIVER' || item.status === 'DRIVER_ASSIGNED');
+        if (!leg) { this.eligibilityNote = 'This parcel has no leg waiting for a driver right now.'; return; }
+        this.eligibilityNote = `Leg ${leg.from} → ${leg.to}: only drivers with an open trip on a compatible route can be assigned.`;
+        this.operationsService.eligibleDrivers(leg.id).subscribe({
+          next: (rows: any[]) => {
+            for (const driver of this.availableDrivers as any[]) {
+              const row = rows.find((item) => item.driverId === driver.id);
+              driver.eligibility = row ? { eligible: row.eligible || row.reason === 'DECLINED', rank: row.rank, reason: row.reason, availableKg: row.availableKg } : { eligible: false, rank: null, reason: 'NO_OPEN_TRIP' };
+            }
+            const order = (driver: any) => driver.eligibility?.rank ?? (driver.eligibility?.eligible ? 500 : 1000);
+            this.availableDrivers.sort((a: any, b: any) => order(a) - order(b));
+            this.filteredDrivers = [...this.availableDrivers];
+          },
+        });
+      },
+    });
+  }
+
+  eligibilityLabel(driver: any): string {
+    const e = driver.eligibility;
+    if (!e) return '';
+    if (e.eligible) return e.rank === 1 ? 'Best match' : `Eligible · ${Math.round(e.availableKg ?? 0)} kg free`;
+    const reasons: Record<string, string> = {
+      NO_OPEN_TRIP: 'No open trip', WRONG_ROUTE_OR_DIRECTION: 'Wrong route or direction', PICKUP_PASSED: 'Already passed the pickup',
+      INSUFFICIENT_CAPACITY: 'Not enough capacity', ROUTE_INACTIVE: 'Route inactive', MOTORCYCLE_ROUTE_TOO_LONG: 'Route too long for motorcycle',
+    };
+    return reasons[e.reason] ?? 'Not eligible';
   }
 
   selectDriver(driver: DriverWithSelection) {

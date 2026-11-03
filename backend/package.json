@@ -20,7 +20,11 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "db:seed": "prisma db seed",
-    "db:seed:verify": "ts-node prisma/verify-seed.ts"
+    "db:seed:verify": "ts-node prisma/verify-seed.ts",
+    "db:seed:scenario": "ts-node prisma/seed-scenario.ts",
+    "db:seed:scenario:verify": "ts-node prisma/verify-seed-scenario.ts",
+    "sync:frontend": "node scripts/sync-frontend.js",
+    "build:web": "npm --prefix ../frontend run build && node scripts/sync-frontend.js"
   },
   "dependencies": {
     "@hapi/joi": "^17.1.1",
@@ -102,7 +106,10 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^@nestjs/schedule$": "<rootDir>/../test/stubs/nestjs-schedule.ts"
+    }
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

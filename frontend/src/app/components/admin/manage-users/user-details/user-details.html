@@ -290,7 +290,7 @@
                     <div class="assignment-item" *ngFor="let parcel of assignedParcels.slice(0, 5)">
                       <div class="assignment-info">
                         <span class="tracking-number">{{ parcel.trackingNumber }}</span>
-                        <span class="status" [ngClass]="getParcelStatusClass(parcel.status)">{{ parcel.status }}</span>
+                        <span class="status" [ngClass]="getParcelStatusClass(parcel.status)">{{ parcelStatusLabel(parcel.status) }}</span>
                       </div>
                       <div class="assignment-details">
                         <span>{{ parcel.senderName }} → {{ parcel.recipientName }}</span>
@@ -343,7 +343,7 @@
                       </td>
                       <td>
                         <span class="status-badge" [ngClass]="getParcelStatusClass(parcel.status)">
-                          {{ parcel.status }}
+                          {{ parcelStatusLabel(parcel.status) }}
                         </span>
                       </td>
                       <td>{{ parcel.senderName }}</td>

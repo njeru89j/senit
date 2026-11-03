@@ -157,13 +157,18 @@ export class CreateDelivery implements OnInit {
       destination: ['', [Validators.required, Validators.minLength(3)]],
       parcelWeight: ['', [Validators.required, Validators.min(0.1), Validators.max(1000)]],
       estimatedValue: ['', [Validators.required, Validators.min(1), Validators.max(100000)]],
-      requestLockerOnConfirmation: [false],
+      parcelCategory: ['DURABLE', [Validators.required]],
+      description: ['', [Validators.maxLength(500)]],
+      collectionMethod: ['STATION_COLLECTION', Validators.required],
       lockerRequestedHours: [24, [Validators.min(1), Validators.max(72)]]
     }, { validators: senderRecipientValidator });
 
     // Listen to parcel weight changes to calculate total price
     this.deliveryForm.get('parcelWeight')?.valueChanges.subscribe(weight => {
       this.calculateTotalPrice(weight);
+    });
+    this.deliveryForm.get('parcelCategory')?.valueChanges.subscribe(() => {
+      this.calculateTotalPrice(this.deliveryForm.get('parcelWeight')?.value);
     });
 
 
@@ -760,6 +765,13 @@ export class CreateDelivery implements OnInit {
   getCalculatedDeliveryFee(): number {
     const weight = Number(this.deliveryForm.get('parcelWeight')?.value) || 0;
     const declaredValue = Number(this.deliveryForm.get('estimatedValue')?.value) || 0;
+    const category = this.deliveryForm.get('parcelCategory')?.value;
+    const premiumCategory = category === 'FRAGILE' || category === 'ELECTRONICS';
+    if (premiumCategory) {
+      const distanceBands = Math.floor(this.getTransitPointDistanceKm() / 100);
+      const perKgFee = 20 + distanceBands * 5;
+      return Math.max(500, Math.round(300 + weight * perKgFee));
+    }
     if (weight < 5 && declaredValue < 5000) return 300;
 
     const distanceBands = Math.floor(this.getTransitPointDistanceKm() / 100);
@@ -789,8 +801,8 @@ export class CreateDelivery implements OnInit {
 
   isDeliveryTabValid(): boolean {
     const deliveryFields = this.userRole === 'CUSTOMER'
-      ? ['recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'estimatedValue']
-      : ['senderName', 'senderContact', 'senderEmail', 'recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'estimatedValue'];
+      ? ['recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'estimatedValue', 'parcelCategory']
+      : ['senderName', 'senderContact', 'senderEmail', 'recipientName', 'recipientContact', 'recipientEmail', 'parcelWeight', 'estimatedValue', 'parcelCategory'];
     
     return deliveryFields.every(field => {
       const control = this.deliveryForm.get(field);
@@ -818,7 +830,6 @@ export class CreateDelivery implements OnInit {
     if (this.deliveryForm.valid) {
       this.isSubmitting = true;
       const formData = this.deliveryForm.getRawValue();
-      const calculatedDeliveryFee = this.getCalculatedDeliveryFee();
       
       // Show loading toast
       this.toastService.showInfo('Creating delivery...');
@@ -835,10 +846,11 @@ export class CreateDelivery implements OnInit {
         deliveryAddress: formData.destination,
         pickupTransitPointId: this.selectedPickupTransitPointId,
         destinationTransitPointId: this.selectedDestinationTransitPointId,
-        requestLockerOnConfirmation: !!formData.requestLockerOnConfirmation,
+        collectionMethod: formData.collectionMethod === 'SMART_LOCKER' ? 'SMART_LOCKER' : 'STATION_COLLECTION',
         lockerRequestedMinutes: +formData.lockerRequestedHours * 60,
         weight: formData.parcelWeight,
-        description: `Delivery from ${formData.pickupLocation} to ${formData.destination}`,
+        category: formData.parcelCategory,
+        description: formData.description?.trim() || `Delivery from ${formData.pickupLocation} to ${formData.destination}`,
         value: formData.estimatedValue,
         deliveryInstructions: `Estimated distance: ${this.routeDistance} km, Estimated time: ${this.routeEstimatedTime} minutes`
       };
@@ -859,61 +871,13 @@ export class CreateDelivery implements OnInit {
               return;
             }
 
-            if (this.userRole === 'TRANSIT_OFFICER') {
-              this.router.navigate(['/transit-officer/parcel-details', response.id]);
+            // Staff bookings are accepted over the counter; the API has already tried to hand them to a driver.
+            if (this.userRole === 'TRANSIT_OFFICER' || this.userRole === 'ADMIN') {
+              const assignment = (response as any).autoAssignment;
+              if (assignment?.message) assignment.autoAssigned ? this.toastService.showSuccess(assignment.message) : this.toastService.showInfo(assignment.message);
+              this.router.navigate([this.userRole === 'ADMIN' ? '/admin/parcel-details' : '/transit-officer/parcel-details', response.id]);
               return;
             }
-            
-            // Create enhanced parcel details for driver assignment
-            const parcelDetails = {
-              id: response.id,
-              trackingNumber: response.trackingNumber,
-              pickupAddress: formData.pickupLocation,
-              deliveryAddress: formData.destination,
-              weight: formData.parcelWeight,
-              price: calculatedDeliveryFee,
-              value: formData.estimatedValue,
-              pickupLat: this.pickupCoordinates?.lat,
-              pickupLng: this.pickupCoordinates?.lng,
-              deliveryLat: this.destinationCoordinates?.lat,
-              deliveryLng: this.destinationCoordinates?.lng,
-              estimatedDistance: this.routeDistance,
-              estimatedDeliveryTime: this.routeEstimatedTime,
-              senderName: formData.senderName,
-              recipientName: formData.recipientName
-            };
-            
-            // Store parcel details in service as backup
-            this.parcelsService.setTempParcelDetails(parcelDetails, false);
-            
-            // Prepare navigation state
-            const navigationState = { 
-              orderDetails: {
-                senderName: formData.senderName,
-                senderContact: formData.senderContact,
-                recipientName: formData.recipientName,
-                recipientContact: formData.recipientContact,
-                pickupLocation: formData.pickupLocation,
-                destination: formData.destination,
-                totalPrice: calculatedDeliveryFee,
-                parcelWeight: formData.parcelWeight,
-                estimatedValue: formData.estimatedValue,
-                pricePerKg: this.pricePerKg,
-                senderAddress: '', // No longer stored in orderDetails
-                senderEmail: formData.senderEmail,
-                recipientAddress: '', // No longer stored in orderDetails
-                recipientEmail: formData.recipientEmail
-              },
-              parcelDetails: parcelDetails,
-              createdParcel: response
-            };
-            
-            // Navigate with state after a small delay to ensure state is set
-            setTimeout(() => {
-              this.router.navigate(['/order-confirmation'], {
-                state: navigationState
-              });
-            }, 100);
           } else {
             this.toastService.showError('Failed to create delivery - invalid response');
           }

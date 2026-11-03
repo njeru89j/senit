@@ -13,6 +13,7 @@ import { CommonModule } from './common/common.module';
 import { DatabaseModule } from './database/database.module';
 import { SendITMailerModule } from './mailer/mailer.module';
 import { OperationsModule } from './operations/operations.module';
+import { SupportChatModule } from './support-chat/support-chat.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { OperationsModule } from './operations/operations.module';
     CommonModule,
     SendITMailerModule,
     OperationsModule,
+    SupportChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],

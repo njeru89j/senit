@@ -115,45 +115,8 @@ export class DriversController {
     return this.driversService.updateLocation(params.id, updateLocationDto);
   }
 
-  @Post('assign-parcel')
-  @HttpCode(HttpStatus.OK)
-  @UsePipes(createJoiValidationPipe(assignParcelSchema))
-  @Roles('ADMIN')
-  assignParcel(
-    @Body() assignParcelDto: AssignParcelDto,
-  ): Promise<AssignParcelResponse> {
-    return this.driversService.assignParcel(assignParcelDto);
-  }
-
-  @Patch('parcels/:parcelId/status')
-  @HttpCode(HttpStatus.OK)
-  @UsePipes(createJoiValidationPipe(updateParcelStatusSchema))
-  @Roles('DRIVER')
-  updateParcelStatus(
-    @Param('parcelId') parcelId: string,
-    @Body() updateParcelStatusDto: UpdateParcelStatusDto,
-    @Request() req: { user: { sub: string } },
-  ): Promise<UpdateParcelStatusResponse> {
-    return this.driversService.updateParcelStatus(
-      parcelId,
-      req.user.sub,
-      updateParcelStatusDto,
-    );
-  }
-
-  @Post('parcels/:parcelId/reject')
-  @HttpCode(HttpStatus.OK)
-  @Roles('DRIVER')
-  rejectParcelAssignment(@Param('parcelId') parcelId: string, @Body('reason') reason: string, @Request() req: { user: { sub: string } }) {
-    return this.driversService.rejectParcelAssignment(parcelId, req.user.sub, reason);
-  }
-
-  @Post('parcels/:parcelId/accept')
-  @HttpCode(HttpStatus.OK)
-  @Roles('DRIVER')
-  acceptParcelAssignment(@Param('parcelId') parcelId: string, @Request() req: { user: { sub: string } }) {
-    return this.driversService.acceptParcelAssignment(parcelId, req.user.sub);
-  }
+  // Parcel assignment, acceptance, collection and movement are handled by the operations workflow
+  // (operations/assignments/*, operations/driver/trips/*), which enforces route, capacity and custody rules.
 
   // Admin endpoints for managing driver applications
   @Post('applications/:id/approve')

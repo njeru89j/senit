@@ -7,10 +7,10 @@
     <!-- Header -->
     <div class="content-header">
       <div class="header-left">
-        <h1>Parcel {{ parcel.id }}</h1>
+        <h1>Parcel {{ parcel.trackingNumber || parcel.id }}</h1>
         <div class="parcel-status">
           <span class="status-badge" [ngClass]="getStatusClass(parcel.status)">
-            {{ parcel.status }}
+            {{ parcel.originalStatus ? statusLabel(parcel.originalStatus) : parcel.status }}
           </span>
         </div>
       </div>
@@ -308,19 +308,40 @@
           <!-- Tracking Timeline -->
           <div class="timeline-section">
             <h2 class="section-title">Order History</h2>
-            <div class="tracking-summary" *ngIf="trackingOverview">
-              <p *ngIf="trackingOverview.route"><strong>Route:</strong> {{ trackingOverview.route.name }} — {{ trackingOverview.route.origin }} → {{ trackingOverview.route.destination }}</p>
-              <p *ngIf="trackingOverview.batch"><strong>Batch:</strong> {{ trackingOverview.batch.batchNumber }}</p>
-              <div *ngIf="trackingOverview.locker">
-                <p><strong>Locker station:</strong> {{ trackingOverview.locker.stationName }} — {{ trackingOverview.locker.stationAddress }}</p>
-                <p><strong>Locker number:</strong> {{ trackingOverview.locker.compartmentNo }} ({{ trackingOverview.locker.size | titlecase }})</p>
-                <p><strong>Collection deadline:</strong> {{ trackingOverview.locker.expiresAt | date:'medium' }}</p>
-                <div class="quick-actions"><input [(ngModel)]="lockerCollectionCode" placeholder="Enter collection code" aria-label="Locker collection code"><button class="action-btn" (click)="collectFromLocker()" [disabled]="lockerRequestBusy || !lockerCollectionCode">{{lockerRequestBusy ? 'Collecting…' : 'Collect parcel from locker'}}</button></div>
-                <div class="quick-actions"><select [(ngModel)]="lockerExtensionHours" aria-label="Requested extension"><option [ngValue]="6">6 hours</option><option [ngValue]="12">12 hours</option><option [ngValue]="24">24 hours</option><option [ngValue]="48">48 hours</option></select><button class="action-btn" (click)="requestLockerExtension()" [disabled]="lockerRequestBusy">Request more locker time</button></div>
+            <div class="tracking-summary journey-actions" *ngIf="trackingOverview">
+              <!-- Before hand-over the sender may still change the booking -->
+              <ng-container *ngIf="canEditBooking">
+                <p><strong>Not handed over yet.</strong> Drop the parcel at {{ apiParcel?.pickupAddress }} within 24 hours. You can still change the booking.</p>
+                <div class="quick-actions" *ngIf="!editing">
+                  <button class="action-btn" (click)="startEdit()">Change booking</button>
+                  <button class="action-btn danger" (click)="cancelBooking()" [disabled]="lockerRequestBusy">Cancel booking</button>
+                </div>
+                <div class="edit-booking" *ngIf="editing">
+                  <label>Drop-off station<select [(ngModel)]="edit.pickupTransitPointId"><option *ngFor="let p of stations" [value]="p.id">{{ p.name }}</option></select></label>
+                  <label>Destination station<select [(ngModel)]="edit.destinationTransitPointId"><option *ngFor="let p of stations" [value]="p.id">{{ p.name }}</option></select></label>
+                  <label>Weight (kg)<input type="number" min="0.1" max="1000" step="0.1" [(ngModel)]="edit.weight"></label>
+                  <label>Collection<select [(ngModel)]="edit.collectionMethod"><option value="STATION_COLLECTION">Station counter</option><option value="SMART_LOCKER">Smart locker</option></select></label>
+                  <div class="quick-actions"><button class="action-btn" (click)="saveEdit()" [disabled]="lockerRequestBusy">Save changes</button><button class="action-btn secondary" (click)="editing = false">Cancel</button></div>
+                </div>
+              </ng-container>
+
+              <div *ngIf="trackingOverview.locker as locker">
+                <p><strong>Smart locker:</strong> {{ locker.stationName }} · locker {{ locker.compartmentNo }} ({{ locker.size | titlecase }})</p>
+                <p *ngIf="!locker.placedAt">Staff are placing your parcel; the collection code is sent to the recipient as soon as it is inside.</p>
+                <ng-container *ngIf="locker.placedAt && !locker.collectedAt">
+                  <p><strong>Collect before:</strong> {{ locker.expiresAt | date: 'medium' }}</p>
+                  <div class="quick-actions" *ngIf="isRecipientUser"><input [(ngModel)]="lockerCollectionCode" placeholder="Enter collection code" aria-label="Locker collection code"><button class="action-btn" (click)="collectFromLocker()" [disabled]="lockerRequestBusy || !lockerCollectionCode">{{ lockerRequestBusy ? 'Collecting…' : 'Collect from locker' }}</button></div>
+                  <div class="quick-actions" *ngIf="isRecipientUser"><select [(ngModel)]="lockerExtensionHours" aria-label="Requested extension"><option [ngValue]="6">6 hours</option><option [ngValue]="12">12 hours</option><option [ngValue]="24">24 hours</option><option [ngValue]="48">48 hours</option></select><button class="action-btn" (click)="requestLockerExtension()" [disabled]="lockerRequestBusy">Request more locker time</button></div>
+                </ng-container>
               </div>
-              <button class="action-btn" *ngIf="!trackingOverview.locker && isRecipient && !['completed','cancelled','delivered'].includes(parcel.originalStatus || '')" (click)="requestLocker()" [disabled]="lockerRequestBusy">{{ lockerRequestBusy ? 'Sending request…' : 'Request a smart locker' }}</button>
-              <button class="action-btn" *ngIf="!trackingOverview.locker && parcel.originalStatus === 'at_destination'" (click)="collectAtTransitPoint()" [disabled]="lockerRequestBusy">Confirm collection at transit point</button>
-              <p *ngIf="parcel.originalStatus === 'at_destination'"><strong>Collection window:</strong> collect here or request a locker within 12 hours of verification.</p>
+
+              <ng-container *ngIf="apiParcel?.status === 'at_destination'">
+                <p><strong>Ready at {{ apiParcel.currentLocation }}.</strong> {{ collectionOverdue ? 'The 12-hour window has ended; collect it at the counter with your ID.' : 'Collect it at the station counter before ' + (apiParcel.collectionDeadlineAt | date: 'MMM d, HH:mm') + '.' }}</p>
+                <div class="quick-actions">
+                  <button class="action-btn" *ngIf="isRecipientUser && !collectionOverdue" (click)="collectAtTransitPoint()" [disabled]="lockerRequestBusy">I have collected it</button>
+                  <button class="action-btn secondary" *ngIf="(isRecipientUser || isSenderUser) && !collectionOverdue" (click)="requestLocker()" [disabled]="lockerRequestBusy">{{ lockerRequestBusy ? 'Requesting…' : 'Use a smart locker instead' }}</button>
+                </div>
+              </ng-container>
               <p *ngIf="trackingOverview.security?.alerts?.length"><strong>Security:</strong> {{ trackingOverview.security.alerts.length }} alert(s) recorded.</p>
             </div>
             <div class="timeline">
@@ -388,7 +409,7 @@
           </div>
 
           <!-- Completion Section - Show for all statuses but disable button when not ready -->
-          <div class="completion-section">
+          <div class="completion-section" *ngIf="!isSender || isRecipient">
             <div class="completion-header">
               <h2 class="section-title">
                 <i class="fas" [class.fa-check-double]="canMarkAsComplete()" [class.fa-clock]="!canMarkAsComplete()"></i>

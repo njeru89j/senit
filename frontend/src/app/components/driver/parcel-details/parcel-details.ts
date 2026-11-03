@@ -145,19 +145,9 @@ export class DriverParcelDetails implements OnInit {
     if (!this.parcel) return;
 
     // Determine completion status based on current parcel status
-    const isPickupCompleted = this.parcel.status === 'collected' ||
-                             this.parcel.status === 'picked_up' || 
-                             this.parcel.status === 'at_transit_point' ||
-                             this.parcel.status === 'at_destination' ||
-                             this.parcel.status === 'in_locker' ||
-                             this.parcel.status === 'in_transit' || 
-                             this.parcel.status === 'delivered_to_recipient' ||
-                             this.parcel.status === 'delivered' ||
-                             this.parcel.status === 'completed';
-
-    const isDeliveryCompleted = this.parcel.status === 'delivered_to_recipient' ||
-                               this.parcel.status === 'delivered' ||
-                               this.parcel.status === 'completed';
+    const status = this.parcel.status;
+    const isPickupCompleted = !['awaiting_confirmation', 'at_origin_transit_point', 'cancelled'].includes(status);
+    const isDeliveryCompleted = ['at_destination', 'locker_assigned', 'in_locker', 'delivered', 'completed'].includes(status);
 
     this.deliveryInstructions = [
       {
@@ -446,102 +436,21 @@ export class DriverParcelDetails implements OnInit {
     return address;
   }
 
-  toggleInstruction(index: number) {
-    if (!this.canCompleteInstruction(index)) {
-      return;
-    }
-
-    this.deliveryInstructions[index].completed = !this.deliveryInstructions[index].completed;
-    
-    if (this.deliveryInstructions[index].completed) {
-      this.deliveryInstructions[index].completedAt = new Date();
-      this.deliveryInstructions[index].location = this.getLocationForInstruction(index);
-    }
-    
-    // Update status based on completed instructions
-    this.updateParcelStatus();
+  /**
+   * The checklist is informational: collection, hand-over and verification are recorded from the trip
+   * screen (My Trip), where the server checks the vehicle is at the right station.
+   */
+  toggleInstruction(_index: number) {
+    this.toastService.showInfo('Record collection and drop-off from My Trip, at the station.');
   }
 
-  canCompleteInstruction(index: number): boolean {
-    // Only sender collection is driver-confirmed here. All onward movement
-    // and final delivery are confirmed through route batches/operations.
-    if (index > 0) return false;
-    if (!this.parcel || this.parcel.status !== 'assigned') return false;
-    // Can only complete instructions in order
-    for (let i = 0; i < index; i++) {
-      if (!this.deliveryInstructions[i].completed) {
-        return false;
-      }
-    }
-    return true;
+  canCompleteInstruction(_index: number): boolean {
+    return false;
   }
 
-  updateParcelStatus() {
-    if (!this.parcel) return;
-
-    const completedCount = this.deliveryInstructions.filter(instruction => instruction.completed).length;
-    
-    let newStatus = this.parcel.status;
-    
-    if (completedCount === 0) {
-      newStatus = 'assigned';
-    } else if (completedCount === 1) {
-      newStatus = 'in_transit';
-    }
-
-    if (newStatus !== this.parcel.status) {
-      this.updateParcelStatusOnServer(newStatus);
-    }
+  openTripScreen() {
+    this.router.navigate(['/driver/my-parcels']);
   }
-
-  private updateParcelStatusOnServer(newStatus: string) {
-    if (!this.parcel) return;
-
-    this.isUpdatingStatus = true; // Set loading state
-
-    // Determine the appropriate status update based on the new status
-    let statusUpdate: any = {
-      status: newStatus as any,
-      notes: `Status updated by driver to ${newStatus}`
-    };
-
-    // Add specific notes based on the action
-    if (newStatus === 'in_transit') {
-      statusUpdate.notes = 'Parcel collected from sender and is now in transit';
-      statusUpdate.currentLocation = this.parcel.pickupAddress;
-    } else if (newStatus === 'delivered_to_recipient') {
-      statusUpdate.notes = 'Parcel delivered to recipient';
-      statusUpdate.currentLocation = this.parcel.deliveryAddress;
-    } else {
-      statusUpdate.notes = `Status updated to ${newStatus}`;
-    }
-
-    this.parcelsService.updateParcelStatus(this.parcel.id, statusUpdate).subscribe({
-      next: (updatedParcel) => {
-        this.parcel = updatedParcel;
-        const actionText = newStatus === 'in_transit' ? 'Parcel collected and is now in transit' : 
-                          newStatus === 'delivered_to_recipient' ? 'Parcel delivered successfully' :
-                          `Parcel status updated to ${newStatus}`;
-        this.toastService.showSuccess(actionText);
-        
-        // Update the delivery instructions to reflect the new status
-        this.initializeDeliveryInstructions();
-        this.loadStatusHistory(this.parcel.id);
-      },
-      error: (error) => {
-        console.error('Error updating parcel status:', error);
-        this.toastService.showError(error?.message || 'Failed to update parcel status');
-        
-        // Revert the instruction completion if the update failed
-        this.initializeDeliveryInstructions();
-      },
-      complete: () => {
-        this.isUpdatingStatus = false; // Reset loading state
-      }
-    });
-  }
-
-
 
   toggleView() {
     this.showMapView = !this.showMapView;

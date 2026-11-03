@@ -1,0 +1,12 @@
+<section class="support-chat" [class.open]="open" aria-live="polite">
+  <button class="launcher" type="button" (click)="toggle()" [attr.aria-expanded]="open" aria-label="Open SendIT support chat">
+    <i class="fas" [class.fa-comment-dots]="!open" [class.fa-xmark]="open"></i><span>SendIT Assist</span>
+  </button>
+  <div class="panel" *ngIf="open">
+    <header><div><strong>SendIT Assist</strong><small>Help and parcel tracking</small></div><span class="online">Help</span></header>
+    <div class="messages"><p *ngFor="let item of messages" [class.user]="item.from === 'user'" [class.bot]="item.from === 'bot'">{{ item.text }}</p><p class="bot typing" *ngIf="sending">Thinking…</p><div #messagesBottom></div></div>
+    <div class="tracking-help" *ngIf="requiresTracking">Paste your tracking ID below<span *ngIf="!isLoggedIn"> or <a routerLink="/login">sign in</a> to view your parcels</span>.</div>
+    <div class="quick"><button *ngFor="let suggestion of suggestions" type="button" [disabled]="sending" (click)="ask(suggestion)">{{ suggestion }}</button></div>
+    <form (ngSubmit)="send()"><input [(ngModel)]="draft" name="supportMessage" placeholder="Ask a question or paste a tracking ID" autocomplete="off"><button type="submit" [disabled]="sending || !draft.trim()" aria-label="Send message"><i class="fas fa-paper-plane"></i></button></form>
+  </div>
+</section>

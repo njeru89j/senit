@@ -5,6 +5,7 @@ import {
   IsString,
   IsEmail,
   IsNumber,
+  Min,
   IsBoolean,
   IsEnum,
   IsNotEmpty,
@@ -92,6 +93,16 @@ export class UpgradeCustomerToDriverDto {
   @IsString()
   @MaxLength(30)
   vehicleNumber?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  maxLoadKg?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  maxDistanceKm?: number;
 
   @IsOptional()
   @IsArray()
@@ -288,6 +299,11 @@ export class UserFilterDto {
   @IsOptional()
   @IsEnum(['CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN'])
   role?: 'CUSTOMER' | 'DRIVER' | 'TRANSIT_OFFICER' | 'ADMIN';
+
+  /** Drivers serving this route, and the officers of the stations it stops at. */
+  @IsOptional()
+  @IsString()
+  routeId?: string;
 
   @IsOptional()
   @Transform(({ value }) => {

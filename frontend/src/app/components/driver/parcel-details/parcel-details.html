@@ -11,7 +11,7 @@
         <div class="breadcrumb">
           <a routerLink="/driver/dashboard" class="breadcrumb-link">Dashboard</a>
           <span class="breadcrumb-separator">/</span>
-          <a routerLink="/driver/assigned-parcels" class="breadcrumb-link">Assigned Parcels</a>
+          <a routerLink="/driver/my-parcels" class="breadcrumb-link">My Trip</a>
           <span class="breadcrumb-separator">/</span>
           <span class="breadcrumb-current">Parcel Details</span>
         </div>
@@ -28,6 +28,7 @@
 
     <!-- Dashboard Content -->
     <div class="dashboard-content" *ngIf="!isLoading && parcel">
+      <p class="trip-hint"><i class="fas fa-info-circle"></i> Collect, drop off and hand back parcels from <a (click)="openTripScreen()">My Trip</a> while your vehicle is at the station.</p>
       <!-- Parcel Information Section -->
       <div class="parcel-info-section animate-fade-in-up">
         <h2 class="section-title">Parcel Information</h2>

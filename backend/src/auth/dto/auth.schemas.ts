@@ -5,8 +5,15 @@ export const registerSchema = Joi.object({
     'string.email': 'Please provide a valid email address',
     'any.required': 'Email is required',
   }),
-  password: Joi.string().min(6).required().messages({
+  password: Joi.string()
+    .min(6)
+    .pattern(/[A-Za-z]/)
+    .pattern(/\d/)
+    .pattern(/[^A-Za-z\d]/)
+    .required()
+    .messages({
     'string.min': 'Password must be at least 6 characters long',
+    'string.pattern.base': 'Password must include a letter, number, and special character',
     'any.required': 'Password is required',
   }),
   name: Joi.string().min(2).max(50).required().messages({
@@ -106,8 +113,9 @@ export const resetPasswordSchema = Joi.object({
       'string.pattern.base': 'Token must contain only numbers',
       'any.required': 'Token is required',
     }),
-  newPassword: Joi.string().min(6).required().messages({
+  newPassword: Joi.string().min(6).pattern(/[A-Za-z]/).pattern(/\d/).pattern(/[^A-Za-z\d]/).required().messages({
     'string.min': 'Password must be at least 6 characters long',
+    'string.pattern.base': 'Password must include a letter, number, and special character',
     'any.required': 'New password is required',
   }),
 });
@@ -116,8 +124,9 @@ export const changePasswordSchema = Joi.object({
   currentPassword: Joi.string().required().messages({
     'any.required': 'Current password is required',
   }),
-  newPassword: Joi.string().min(6).required().messages({
+  newPassword: Joi.string().min(6).pattern(/[A-Za-z]/).pattern(/\d/).pattern(/[^A-Za-z\d]/).required().messages({
     'string.min': 'Password must be at least 6 characters long',
+    'string.pattern.base': 'Password must include a letter, number, and special character',
     'any.required': 'New password is required',
   }),
 });

@@ -7,6 +7,7 @@ import { ParcelsService, ParcelQueryDto } from '../../../services/parcels.servic
 import { ToastService } from '../../shared/toast/toast.service';
 import { Parcel } from '../../../services/base-api.service';
 import { AuthService } from '../../../services/auth.service';
+import { parcelStatusClass, parcelStatusLabel, inStatusGroup, PARCEL_STATUS_FILTERS } from '../../../utils/parcel-status';
 
 @Component({
   selector: 'app-manage-parcels',
@@ -15,6 +16,7 @@ import { AuthService } from '../../../services/auth.service';
   styleUrl: './manage-parcels.css'
 })
 export class ManageParcels implements OnInit {
+  readonly statusFilters = PARCEL_STATUS_FILTERS;
   // User role for role-based access control
   userRole: string = 'ADMIN'; // Default role for admin component, will be set from auth service later
   
@@ -67,31 +69,11 @@ export class ManageParcels implements OnInit {
   }
 
   getStatusClass(status: string): string {
-    switch (status) {
-      case 'pending': return 'status-pending';
-      case 'assigned': return 'status-assigned';
-      case 'picked_up': return 'status-picked';
-      case 'in_transit': return 'status-transit';
-      case 'delivered_to_recipient': return 'status-delivered';
-      case 'delivered': return 'status-delivered';
-      case 'completed': return 'status-completed';
-      case 'cancelled': return 'status-cancelled';
-      default: return '';
-    }
+    return parcelStatusClass(status);
   }
 
   getStatusDisplayName(status: string): string {
-    switch (status) {
-      case 'pending': return 'Pending';
-      case 'assigned': return 'Assigned';
-      case 'picked_up': return 'Picked Up';
-      case 'in_transit': return 'In Transit';
-      case 'delivered_to_recipient': return 'Delivered';
-      case 'delivered': return 'Delivered';
-      case 'completed': return 'Completed';
-      case 'cancelled': return 'Cancelled';
-      default: return status;
-    }
+    return parcelStatusLabel(status);
   }
 
   viewDetails(parcelId: string) {

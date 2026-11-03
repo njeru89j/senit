@@ -4,694 +4,224 @@
     <div class="content-header">
       <div class="header-left">
         <h1>Delivery Operations</h1>
-        <p class="subtitle">
-          Coordinate routes, batches, smart lockers and capacity.
-        </p>
+        <p class="subtitle">Configure the two-way route network, watch trips and exceptions, manage smart lockers and plan capacity.</p>
       </div>
       <button class="primary-btn" (click)="refresh()">Refresh</button>
     </div>
     <div class="dashboard-content">
       <p class="status-message" *ngIf="message">{{ message }}</p>
       <section class="summary-cards" *ngIf="report">
-        <article>
-          <div>
-            <span>Total parcels</span><strong>{{ report.parcels }}</strong>
-          </div>
-        </article>
-        <article>
-          <div>
-            <span>Delivered</span><strong>{{ report.delivered }}</strong
-            ><small>{{ report.deliveryRate }}% completion</small>
-          </div>
-        </article>
-        <article>
-          <div>
-            <span>Active routes</span><strong>{{ report.activeRoutes }}</strong>
-          </div>
-        </article>
-        <article>
-          <div>
-            <span>Locker bays</span
-            ><strong>{{ report.lockers?.length || 0 }}</strong>
-          </div>
-        </article>
+        <article><div><span>Total parcels</span><strong>{{ report.parcels }}</strong></div></article>
+        <article><div><span>Delivered</span><strong>{{ report.delivered }}</strong><small>{{ report.deliveryRate }}% completion</small></div></article>
+        <article><div><span>Active routes</span><strong>{{ report.activeRoutes }}</strong><small>{{ report.openTrips }} open trips</small></div></article>
+        <article><div><span>Open exceptions</span><strong>{{ report.alerts }}</strong></div></article>
       </section>
       <nav class="tab-navigation">
-        <button *ngIf="!isTransitOfficer"
-          [class.active]="activeTab === 'network'"
-          (click)="switchTab('network')"
-        >
-          Network</button
-        ><button *ngIf="!isTransitOfficer" [class.active]="activeTab === 'map'" (click)="switchTab('map')">
-          Route Map</button
-        ><button
-          [class.active]="activeTab === 'batches'"
-          (click)="switchTab('batches')"
-        >
-          Batches <span class="tab-badge">{{ batches.length }}</span></button
-        ><button
-          [class.active]="activeTab === 'lockers'"
-          (click)="switchTab('lockers')"
-        >
-          Smart Lockers</button
-        ><button *ngIf="!isTransitOfficer"
-          [class.active]="activeTab === 'planning'"
-          (click)="switchTab('planning')"
-        >
-          Reports &amp; Planning
-        </button>
+        <button *ngIf="!isTransitOfficer" [class.active]="activeTab === 'network'" (click)="switchTab('network')">Network</button>
+        <button *ngIf="!isTransitOfficer" [class.active]="activeTab === 'map'" (click)="switchTab('map')">Route Map</button>
+        <button [class.active]="activeTab === 'trips'" (click)="switchTab('trips')">Trips &amp; Exceptions <span class="tab-badge">{{ openAlerts.length }}</span></button>
+        <button [class.active]="activeTab === 'lockers'" (click)="switchTab('lockers')">Smart Lockers</button>
+        <button *ngIf="!isTransitOfficer" [class.active]="activeTab === 'planning'" (click)="switchTab('planning')">Reports &amp; Planning</button>
       </nav>
+
       <section class="tab-content" *ngIf="activeTab === 'map'">
-        <div class="section-heading"><div><h2>Interconnected route map</h2><p>Lines follow transit-point order; shared points show network connections.</p></div></div>
-        <div class="network-map"><svg viewBox="0 0 1000 600" role="img" aria-label="Route network map">
-          <polyline *ngFor="let route of routes; let i = index" [attr.points]="routeMapPoints(route)" [attr.class]="'route-line route-' + (i % 6)"></polyline>
-          <g *ngFor="let point of points" [attr.transform]="'translate(' + mapPoint(point).x + ' ' + mapPoint(point).y + ')'">
-            <circle r="9"></circle><text x="13" y="5">{{ point.name }}</text>
-          </g>
-        </svg></div>
-      </section>
-      <section class="tab-content" *ngIf="activeTab === 'network'">
         <div class="section-heading">
-          <div>
-            <h2>Route Network</h2>
-            <p>Configure routes and transit points.</p>
-          </div>
+          <div><h2>Route map</h2><p>Stations and routes on the map. Zoom and pan as usual; tap or hover a station for its officer, address and routes.</p></div>
         </div>
+        <app-network-map [stations]="mappablePoints" [routes]="routes" height="560px"></app-network-map>
+      </section>
+
+      <section class="tab-content" *ngIf="activeTab === 'network'">
+        <div class="section-heading"><div><h2>Route Network</h2><p>A route is an ordered list of stations from one endpoint to the other and runs in both directions. Parcels transfer wherever routes share a station.</p></div></div>
         <div class="form-grid">
           <article class="form-card">
             <h3>Create Route</h3>
-            <label>Route name<input [(ngModel)]="route.name" /></label>
-            <div class="two-col">
-              <label>Origin<input [(ngModel)]="route.origin" /></label
-              ><label
-                >Destination<input [(ngModel)]="route.destination"
-              /></label>
+            <label>Route name<input [(ngModel)]="route.name" placeholder="e.g. Meru ↔ Nairobi" /></label>
+            <label>Add stop in order<select [ngModel]="''" (ngModelChange)="addRouteStop($event)">
+              <option value="">Select the next station</option>
+              <option *ngFor="let p of activePoints" [value]="p.id" [disabled]="route.transitPointIds.includes(p.id)">{{ p.name }}</option>
+            </select></label>
+            <div class="route-order" *ngIf="route.transitPointIds.length">
+              <div class="route-stop wide" *ngFor="let id of route.transitPointIds; let i = index">
+                <span class="stop-number">{{ i + 1 }}</span><b>{{ pointName(id) }} <small *ngIf="i === 0 || i === route.transitPointIds.length - 1" class="meta">endpoint</small></b>
+                <input *ngIf="i > 0" type="number" min="0" step="0.1" [(ngModel)]="route.distancesKm[i]" placeholder="km from previous" />
+                <span *ngIf="i === 0"></span>
+                <button type="button" class="icon-btn" title="Remove" (click)="removeRouteStop(i)">✕</button>
+              </div>
             </div>
-            <button
-              class="primary-btn full"
-              (click)="addRoute()"
-              [disabled]="
-                busy || !route.name || !route.origin || !route.destination
-              "
-            >
-              Create route
-            </button>
+            <p class="meta">Distances are optional; straight-line distance between coordinates is used when left empty.</p>
+            <button class="primary-btn full" (click)="addRoute()" [disabled]="busy || !route.name || route.transitPointIds.length < 2">Create route</button>
           </article>
           <article class="form-card">
             <h3>Add Transit Point</h3>
-            <label
-              >Route<select [(ngModel)]="point.routeId">
-                <option value="">Select route</option>
-                <option *ngFor="let r of routes" [value]="r.id">
-                  {{ r.name }}
-                </option>
-              </select></label
-            ><label>Address<input [(ngModel)]="point.name" /></label
-            ><label
-              ><span *ngIf="false">Transit officers<select multiple size="5" [(ngModel)]="point.officerIds">
-                <option
-                  *ngFor="let officer of nominatedTransitOfficers"
-                  [value]="officer.id"
-                >
-                  {{ officer.name }} — {{ officer.email }}
-                </option>
-              </select></span></label
-            ><button
-              class="primary-btn full"
-              (click)="addPoint()"
-              [disabled]="
-                busy || !point.name || !point.routeId
-              "
-            >
-              Add point
-            </button>
-          </article>
-          <article class="form-card" *ngIf="false">
-            <h3>Nominate Transit Officer</h3>
-            <p class="meta">
-              Choose an active user. The user becomes available in the Transit
-              Officer dropdown immediately.
-            </p>
-            <label
-              >Search user by name, email, or phone
-              <div class="input-with-suggestions">
-                <input
-                  [(ngModel)]="nomineeSearch"
-                  (ngModelChange)="onNomineeSearchChange($event)"
-                  (keydown)="onNomineeKeyDown($event)"
-                  (focus)="onNomineeFocus()"
-                  (blur)="onNomineeBlur()"
-                  placeholder="Start typing an email or name"
-                  autocomplete="off"
-                />
-                <div
-                  class="suggestions-dropdown"
-                  *ngIf="showNomineeSuggestions"
-                >
-                  <button
-                    type="button"
-                    class="suggestion-item"
-                    *ngFor="let user of nomineeResults; let i = index"
-                    [class.selected]="i === selectedNomineeIndex"
-                    (mousedown)="selectNominee(user)"
-                  >
-                    <span class="suggestion-content"
-                      ><b>{{ user.name }}</b
-                      ><small
-                        >{{ user.email }}
-                        {{ user.phone ? " · " + user.phone : "" }}</small
-                      ></span
-                    >
-                  </button>
-                </div>
-              </div></label
-            ><button
-              class="primary-btn full"
-              (click)="nominateOfficer()"
-              [disabled]="busy || !nomineeId"
-            >
-              Nominate officer
-            </button>
+            <label>Station name<input [(ngModel)]="point.name" placeholder="e.g. Chuka" /></label>
+            <div class="two-col">
+              <label>Latitude<input type="number" step="0.0001" [(ngModel)]="point.latitude" /></label>
+              <label>Longitude<input type="number" step="0.0001" [(ngModel)]="point.longitude" /></label>
+            </div>
+            <label>Add to route (optional)<select [(ngModel)]="point.routeId">
+              <option value="">Not yet</option>
+              <option *ngFor="let r of routes" [value]="r.id">{{ r.name }}</option>
+            </select></label>
+            <p class="meta">A station added to a route becomes a stop before the route's far endpoint; reorder it on the route card.</p>
+            <button class="primary-btn full" (click)="addPoint()" [disabled]="busy || !point.name || point.latitude === null || point.longitude === null">Add point</button>
           </article>
         </div>
         <div class="data-grid">
           <article class="data-card" *ngFor="let r of routes">
-            <span class="status-pill" [class.inactive]="!r.active">{{
-              r.active ? "Active" : "Inactive"
-            }}</span>
+            <span class="status-pill" [class.inactive]="!r.active">{{ r.active ? 'Active' : 'Inactive' }}</span>
             <h3>{{ r.name }}</h3>
-            <p>{{ r.origin }} → {{ r.destination }}</p>
+            <p>{{ r.endpoints?.[0]?.name }} ↔ {{ r.endpoints?.[1]?.name }} · {{ r.lengthKm }} km · {{ r.openTrips }} open trip(s)</p>
             <div class="route-order">
-              <strong>Transit order</strong>
-              <p class="meta" *ngIf="!orderedRoutePoints(r).length">
-                No transit points on this route.
-              </p>
-              <div
-                class="route-stop"
-                *ngFor="let stop of orderedRoutePoints(r); let i = index"
-              >
-                <span class="stop-number">{{ i + 1 }}</span
-                ><b>{{ stop.name }}</b
-                ><button
-                  type="button"
-                  class="icon-btn"
-                  title="Move earlier"
-                  (click)="moveRoutePoint(r, i, -1)"
-                  [disabled]="i === 0"
-                >
-                  ↑</button
-                ><button
-                  type="button"
-                  class="icon-btn"
-                  title="Move later"
-                  (click)="moveRoutePoint(r, i, 1)"
-                  [disabled]="i === orderedRoutePoints(r).length - 1"
-                >
-                  ↓
-                </button>
+              <strong>Stops (both directions)</strong>
+              <p class="meta" *ngIf="!r.transitPoints?.length">No stops on this route.</p>
+              <div class="route-stop wide" *ngFor="let stop of r.transitPoints; let i = index">
+                <span class="stop-number">{{ i + 1 }}</span>
+                <b>{{ stop.transitPoint?.name }} <small class="meta" *ngIf="!stop.distanceKnown && i > 0">distance estimated</small></b>
+                <input *ngIf="i > 0" type="number" min="0" step="0.1" [(ngModel)]="stop.distanceFromPreviousKm" (ngModelChange)="r.orderDirty = true" [placeholder]="stop.hopKm + ' km'" />
+                <span *ngIf="i === 0"></span>
+                <span class="stop-moves"><button type="button" class="icon-btn" title="Move earlier" (click)="moveRoutePoint(r, i, -1)" [disabled]="i === 0">↑</button><button type="button" class="icon-btn" title="Move later" (click)="moveRoutePoint(r, i, 1)" [disabled]="i === r.transitPoints.length - 1">↓</button></span>
               </div>
-              <button
-                class="primary-btn full"
-                *ngIf="r.orderDirty"
-                (click)="saveRouteOrder(r)"
-                [disabled]="busy"
-              >
-                Save transit order
-              </button>
+              <button class="primary-btn full" *ngIf="r.orderDirty" (click)="saveRouteOrder(r)" [disabled]="busy">Save stops and distances</button>
             </div>
-            <button class="outline-btn full" (click)="toggleRoute(r)">
-              {{ r.active ? "Deactivate" : "Activate" }}
-            </button>
+            <button class="outline-btn full" (click)="toggleRoute(r)">{{ r.active ? 'Deactivate' : 'Activate' }}</button>
           </article>
         </div>
       </section>
+
       <section class="tab-content" *ngIf="activeTab === 'network'">
         <div class="table-card">
-          <div class="table-title"><h3>Route network records</h3></div>
-          <div class="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Route</th>
-                  <th>Origin</th>
-                  <th>Destination</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let route of routes">
-                  <td>{{ route.name }}</td>
-                  <td>{{ route.origin }}</td>
-                  <td>{{ route.destination }}</td>
-                  <td>{{ route.active ? "Active" : "Inactive" }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <br />
-        <div class="table-card">
           <div class="table-title"><h3>Transit point records</h3></div>
-          <div class="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Transit point</th>
-                  <th>Route</th>
-                  <th>Transit officer</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let transitPoint of points">
-                  <td>{{ transitPoint.name }}</td>
-                  <td>{{ transitPoint.route?.name || "—" }}</td>
-                  <td>{{ transitPoint.officer?.name || "Unassigned" }}</td>
-                  <td>{{ transitPoint.active ? "Active" : "Inactive" }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <div class="responsive-table"><table>
+            <thead><tr><th>Transit point</th><th>Routes</th><th>Coordinates</th><th>Officer</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              <tr *ngFor="let transitPoint of points">
+                <td>{{ transitPoint.name }}</td>
+                <td>{{ routeNames(transitPoint) }}</td>
+                <td>{{ transitPoint.latitude | number: '1.3-4' }}, {{ transitPoint.longitude | number: '1.3-4' }}</td>
+                <td>{{ transitPoint.officer?.name || 'Unassigned' }}</td>
+                <td>{{ transitPoint.active ? 'Active' : 'Inactive' }}</td>
+                <td><button class="text-btn" (click)="togglePoint(transitPoint)" [disabled]="busy">{{ transitPoint.active ? 'Deactivate' : 'Activate' }}</button></td>
+              </tr>
+              <tr *ngIf="!points.length"><td colspan="6">No transit points yet. Add the stations your parcels travel through, then group them into routes.</td></tr>
+            </tbody>
+          </table></div>
         </div>
         <br />
         <div class="table-card">
           <div class="table-title"><h3>Nominated transit officers</h3></div>
-          <div class="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Phone</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let officer of nominatedTransitOfficers">
-                  <td>{{ officer.name }}</td>
-                  <td>{{ officer.email }}</td>
-                  <td>{{ officer.phone || "—" }}</td>
-                </tr>
-                <tr *ngIf="!nominatedTransitOfficers.length">
-                  <td colspan="3">No transit officers nominated yet.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <div class="responsive-table"><table>
+            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Station address</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let officer of nominatedTransitOfficers"><td>{{ officer.name }}</td><td>{{ officer.email }}</td><td>{{ officer.phone || '—' }}</td><td>{{ officer.address || '—' }}</td></tr>
+              <tr *ngIf="!nominatedTransitOfficers.length"><td colspan="4">No transit officers nominated yet.</td></tr>
+            </tbody>
+          </table></div>
         </div>
       </section>
-      <section class="tab-content" *ngIf="activeTab === 'batches'">
-        <div class="section-heading">
-          <div>
-            <h2>Transit Verification</h2>
-            <p>
-              Verify selected parcels have reached a transit point in good
-              condition.
-            </p>
-          </div>
-        </div>
-        <article class="form-card">
-          <div class="two-col">
-            <label
-              >Route<select
-                [(ngModel)]="batchForm.routeId"
-                (ngModelChange)="onBatchRouteChange()"
-              >
-                <option value="">Select route</option>
-                <option
-                  *ngFor="let r of routes"
-                  [value]="r.id"
-                  [disabled]="!r.active"
-                >
-                  {{ r.name }}
-                </option>
-              </select></label
-            ><label
-              >Transit point<select
-                [(ngModel)]="batchForm.transitPointId"
-                [disabled]="!batchForm.routeId || isTransitOfficer"
-              >
-              <option value="">Select transit point</option>
-                <option
-                  *ngFor="let point of selectedRouteTransitPoints"
-                  [value]="point.id"
-                >
-                  {{ point.name }}
-                </option>
-              </select></label
-            >
-          </div>
-          <label
-            >Route driver<select
-              [(ngModel)]="batchForm.driverId"
-              [disabled]="!batchForm.routeId"
-            >
-              <option value="">Select an approved driver</option>
-              <option *ngFor="let driver of selectedRouteDrivers" [value]="driver.id">
-                {{ driver.name }} â€” {{ driver.vehicleNumber || "No vehicle" }}
-              </option>
-            </select></label
-          >
-          <fieldset>
-            <legend>Parcels ({{ batchForm.parcelIds.length }} selected)</legend>
-            <label class="check-row"
-              ><input
-                type="checkbox"
-                [checked]="
-                  batchEligibleParcels.length &&
-                  batchForm.parcelIds.length === batchEligibleParcels.length
-                "
-                (change)="toggleAllBatchParcels()"
-              /><b>Select all eligible parcels</b></label
-            ><label
-              class="parcel-check"
-              *ngFor="let parcel of batchEligibleParcels"
-              ><input
-                type="checkbox"
-                [checked]="batchForm.parcelIds.includes(parcel.id)"
-                (change)="toggleBatchParcel(parcel.id)"
-              /><span
-                ><b>{{ parcel.trackingNumber || parcel.id }}</b
-                ><small
-                  >{{ parcel.currentLocation || parcel.pickupAddress }} →
-                  {{ parcel.deliveryAddress }}</small
-                ></span
-              ><em>{{ parcel.status }}</em></label
-            >
-            <p class="empty-state" *ngIf="!batchEligibleParcels.length">
-              No collected or transit-point parcels are available.
-            </p>
-          </fieldset>
-          <button
-            class="primary-btn"
-            (click)="createBatch()"
-            [disabled]="busy || !batchForm.routeId || !batchForm.driverId || !batchForm.parcelIds.length"
-          >
-            Create batch and assign driver
-          </button>
-          <button
-            class="outline-btn"
-            (click)="verifyAtTransit()"
-            [disabled]="
-              busy ||
-              !batchForm.routeId ||
-              !batchForm.transitPointId ||
-              !batchForm.parcelIds.length
-            "
-          >
-            {{ batchForm.driverId ? 'Verify and assign route driver' : 'Verify selected parcels in good condition' }}
-          </button>
-        </article>
+
+      <section class="tab-content" *ngIf="activeTab === 'trips'">
+        <div class="section-heading"><div><h2>Exceptions</h2><p>Held parcels, missing hand-overs, overdue collections and route problems. Station officers resolve their own; admins can act anywhere.</p></div></div>
         <div class="table-card">
-          <div class="table-title">
-            <h3>Recent batches</h3>
-            <span>{{ batches.length }} total</span>
-          </div>
-          <div class="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Batch</th>
-                  <th>Parcels</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let batch of batches">
-                  <td>
-                    <b>{{ batch.batchNumber }}</b>
-                  </td>
-                  <td>{{ batch.parcelCount }}</td>
-                  <td>
-                    <span class="status-pill">{{ batch.status }}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-      <section class="tab-content" *ngIf="activeTab === 'lockers'">
-        <div class="section-heading">
-          <div>
-            <h2>Smart Lockers</h2>
-            <p>
-              Allocate a destination parcel to a locker and issue a collection
-              code.
-            </p>
-          </div>
-        </div>
-        <div class="table-card" *ngIf="lockerRequests.length">
-          <div class="table-title">
-            <h3>Recipient locker requests</h3>
-            <span>{{ lockerRequests.length }} pending</span>
-          </div>
-          <div class="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Parcel</th>
-                  <th>Size</th>
-                  <th>Preferred station</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let request of lockerRequests">
-                  <td>{{ request.parcelId }}</td>
-                  <td>
-                    <select [ngModel]="lockerFitSizes[request.id] || request.size" (ngModelChange)="lockerFitSizes[request.id] = $event">
-                      <option value="SMALL">Small</option>
-                      <option value="MEDIUM">Medium</option>
-                      <option value="LARGE">Large</option>
-                      <option value="EXTRA_LARGE">Extra large</option>
-                    </select>
-                  </td>
-                  <td>{{ request.stationId || "Any available station" }}</td>
-                  <td>
-                    <button
-                      class="text-btn"
-                      (click)="approveLockerRequest(request)"
-                      [disabled]="busy"
-                    >
-                      Grant</button
-                    ><button
-                      class="text-btn danger-text"
-                      (click)="rejectLockerRequest(request)"
-                      [disabled]="busy"
-                    >
-                      Reject
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <div class="responsive-table"><table>
+            <thead><tr><th>Exception</th><th>Parcel</th><th>Station</th><th>Details</th><th>Raised</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let alert of openAlerts">
+                <td><span class="status-pill inactive">{{ alertLabel(alert.type) }}</span></td>
+                <td><b>{{ alert.parcel?.trackingNumber }}</b><small class="meta"> {{ alert.parcel?.custody | lowercase }}</small></td>
+                <td>{{ alert.station || '—' }}</td>
+                <td>{{ alert.details }}</td>
+                <td>{{ alert.createdAt | date: 'MMM d, HH:mm' }}</td>
+                <td class="actions-cell">
+                  <button class="text-btn" (click)="resolveAlert(alert, 'CONTINUE')" [disabled]="busy">Resolve</button>
+                  <button class="text-btn" *ngIf="alert.type === 'ROUTE_UNAVAILABLE'" (click)="resolveAlert(alert, 'REPLAN')" [disabled]="busy">Re-plan</button>
+                  <button class="text-btn danger-text" *ngIf="['PARCEL_MISSING', 'PARCEL_DAMAGED', 'SEAL_BROKEN', 'QR_MISMATCH', 'UNEXPECTED_PARCEL'].includes(alert.type)" (click)="resolveAlert(alert, 'CANCEL_PARCEL')" [disabled]="busy">Cancel parcel</button>
+                </td>
+              </tr>
+              <tr *ngIf="!openAlerts.length"><td colspan="6">No open exceptions.</td></tr>
+            </tbody>
+          </table></div>
         </div>
         <br />
+        <div class="section-heading"><div><h2>Driver trips</h2><p>Each trip is one driver running one route in one direction, from endpoint to endpoint.</p></div>
+          <label class="inline-filter">Status<select [(ngModel)]="tripStatus" (ngModelChange)="loadTrips()"><option value="">All</option><option value="CREATED">Preparing</option><option value="IN_TRANSIT">On the road</option><option value="CLOSED">Completed</option><option value="CANCELLED">Cancelled</option></select></label>
+        </div>
+        <div class="table-card">
+          <div class="responsive-table"><table>
+            <thead><tr><th>Trip</th><th>Driver</th><th>Route</th><th>Position</th><th>Parcels</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let trip of trips">
+                <td><b>{{ trip.tripNumber }}</b><small class="meta"> {{ trip.createdAt | date: 'MMM d, HH:mm' }}</small></td>
+                <td>{{ trip.driver?.name }}<small class="meta"> {{ trip.driver?.vehicleNumber }}</small></td>
+                <td>{{ trip.start }} → {{ trip.end }}<small class="meta"> {{ trip.route }}</small></td>
+                <td>{{ trip.status === 'IN_TRANSIT' ? (trip.atStop ? 'At ' : 'Left ') + trip.current : trip.status === 'CREATED' ? 'At ' + trip.start : '—' }}</td>
+                <td>{{ tripParcelSummary(trip) }}</td>
+                <td><span class="status-pill" [class.inactive]="trip.status === 'CANCELLED'">{{ tripStatusLabel(trip.status) }}</span><small class="meta" *ngIf="trip.cancellationReason"> {{ trip.cancellationReason }}</small></td>
+                <td><button class="text-btn danger-text" *ngIf="!isTransitOfficer && (trip.status === 'IN_TRANSIT' || trip.status === 'CREATED')" (click)="custodyException(trip)" [disabled]="busy">Driver cannot continue</button></td>
+              </tr>
+              <tr *ngIf="!trips.length"><td colspan="7">No trips.</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <section class="tab-content" *ngIf="activeTab === 'lockers'">
+        <div class="section-heading"><div><h2>Smart Lockers</h2><p>Lockers are reserved automatically for locker parcels and for station parcels not collected within 12 hours. Staff confirm placement; the recipient then gets the code.</p></div></div>
         <div class="table-card" *ngIf="lockerExtensionRequests.length">
           <div class="table-title"><h3>Locker time extension requests</h3><span>{{ lockerExtensionRequests.length }} pending</span></div>
           <div class="responsive-table"><table><thead><tr><th>Assignment</th><th>Extra time</th><th>Reason</th><th>Action</th></tr></thead><tbody>
             <tr *ngFor="let request of lockerExtensionRequests"><td>{{ request.lockerAssignmentId }}</td><td>{{ request.requestedMinutes / 60 }} hours</td><td>{{ request.reason || 'Not provided' }}</td><td><button class="text-btn" (click)="approveLockerExtension(request)" [disabled]="busy">Approve</button><button class="text-btn danger-text" (click)="rejectLockerExtension(request)" [disabled]="busy">Reject</button></td></tr>
           </tbody></table></div>
-        </div><br />
+        </div><br *ngIf="lockerExtensionRequests.length" />
         <div class="form-grid lockers">
+          <article class="form-card" *ngIf="!isTransitOfficer">
+            <h3>Add locker station</h3>
+            <label>Transit point<select [(ngModel)]="stationForm.transitPointId" (ngModelChange)="prefillStation()"><option value="">Select transit point</option><option *ngFor="let p of activePoints" [value]="p.id">{{ p.name }}</option></select></label>
+            <label>Station name<input [(ngModel)]="stationForm.name" /></label>
+            <label>Address<input [(ngModel)]="stationForm.address" /></label>
+            <label>Opening hours<input [(ngModel)]="stationForm.openingHours" placeholder="06:00-22:00" /></label>
+            <button class="primary-btn full" (click)="addStation()" [disabled]="busy || !stationForm.transitPointId || !stationForm.name">Add station</button>
+          </article>
           <article class="form-card">
             <h3>Create locker</h3>
             <label *ngIf="isTransitOfficer">Transit point<input [value]="points[0]?.name || 'Assigned transit point'" readonly /></label>
             <label *ngIf="!isTransitOfficer">Locker station<select [(ngModel)]="compartmentForm.stationId"><option value="">Select station</option><option *ngFor="let station of lockers" [value]="station.id">{{ station.name }}</option></select></label>
             <label>Locker number<input [(ngModel)]="compartmentForm.compartmentNo" placeholder="e.g. A-01" /></label>
-            <label>Size<select [(ngModel)]="compartmentForm.size"><option value="SMALL">Small</option><option value="MEDIUM">Medium</option><option value="LARGE">Large</option><option value="EXTRA_LARGE">Extra large</option></select></label>
+            <label>Size<select [(ngModel)]="compartmentForm.size"><option value="SMALL">Small (≤ 2 kg)</option><option value="MEDIUM">Medium (≤ 10 kg)</option><option value="LARGE">Large (≤ 25 kg)</option><option value="EXTRA_LARGE">Extra large</option></select></label>
             <button class="primary-btn full" (click)="addCompartment()" [disabled]="busy || !compartmentForm.compartmentNo || (!isTransitOfficer && !compartmentForm.stationId)">Create locker</button>
-          </article>
-          <article class="form-card">
-            <h3>Assign parcel to a locker</h3>
-            <label
-              >Route<select
-                [(ngModel)]="lockerForm.routeId"
-                (ngModelChange)="onLockerRouteChange()"
-              >
-                <option value="">Select route</option>
-                <option *ngFor="let r of routes" [value]="r.id">
-                  {{ r.name }}
-                </option>
-              </select></label
-            ><label
-              >Transit point<select
-                [(ngModel)]="lockerForm.transitPointId"
-                (ngModelChange)="onLockerTransitPointChange()"
-                [disabled]="!lockerForm.routeId"
-              >
-                <option value="">Select transit point</option>
-                <option
-                  *ngFor="let point of selectedLockerRouteTransitPoints"
-                  [value]="point.id"
-                >
-                  {{ point.name }}
-                </option>
-              </select></label
-            ><label
-              >Parcel ID<select
-                [(ngModel)]="lockerForm.parcelId"
-                [disabled]="!lockerForm.routeId || !lockerForm.transitPointId"
-              >
-                <option value="">Select parcel at destination</option>
-                <option *ngFor="let p of lockerEligibleParcels" [value]="p.id">
-                  {{ p.trackingNumber || p.id }}
-                </option>
-              </select></label
-            >
-            <div class="two-col">
-              <label
-                *ngIf="false">Available locker<select
-                  [(ngModel)]="lockerForm.stationId"
-                  [disabled]="!hasLockerAvailabilityFilters"
-                >
-                  <option value="">Select available locker</option>
-                  <option
-                    *ngFor="let locker of availableLockerStations"
-                    [value]="locker.id"
-                  >
-                    {{ locker.name }} — {{ locker.address }}
-                  </option>
-                </select></label
-              ><label
-                >Size<select
-                  [(ngModel)]="lockerForm.size"
-                  (ngModelChange)="onLockerSizeChange()"
-                >
-                  <option value="">Select locker size</option>
-                  <option value="SMALL">Small</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="LARGE">Large</option>
-                  <option value="EXTRA_LARGE">Extra large</option>
-                </select></label
-              >
-            </div>
-            <label
-              >Code validity (minutes)<input
-                type="number"
-                min="1"
-                [(ngModel)]="lockerForm.expiresInMinutes" /></label
-            ><button
-              class="primary-btn full"
-              (click)="assignLocker()"
-              [disabled]="
-                busy ||
-                !lockerForm.routeId ||
-                !lockerForm.transitPointId ||
-                !lockerForm.parcelId ||
-                !selectedAvailableLocker ||
-                !lockerForm.expiresInMinutes
-              "
-            >
-              Assign locker &amp; generate code
-            </button>
-            <p class="locker-selection" *ngIf="hasLockerAvailabilityFilters && selectedAvailableLocker">Locker <strong>{{ selectedAvailableLocker.compartmentNo }}</strong> at {{ selectedAvailableLocker.stationName }} will be selected automatically.</p>
-            <p class="empty-state" *ngIf="hasLockerAvailabilityFilters && !selectedAvailableLocker">No locker is available for this transit point and size. Choose another size or try again later.</p>
             <div class="code-card" *ngIf="generatedLockerCode">
-              <span>Parcel owner collection code</span
-              ><strong>{{ generatedLockerCode.collectionCode }}</strong
-              ><small>Locker {{ generatedLockerCode.locker?.compartmentNo || 'assigned' }} · Assignment {{ generatedLockerCode.assignment.id }}</small>
+              <span>New collection code</span><strong>{{ generatedLockerCode.collectionCode }}</strong>
+              <small>Give it only to the verified recipient · valid until {{ generatedLockerCode.expiresAt | date: 'MMM d, HH:mm' }}</small>
             </div>
-            <div class="table-card" style="margin-top: 16px" *ngIf="false">
-              <div class="table-title">
-                <h3>Available lockers</h3>
-                <span>{{ availableLockers.length }} available</span>
-              </div>
-              <div class="responsive-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Station</th>
-                      <th>Locker bay</th>
-                      <th>Size</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr *ngFor="let locker of availableLockers">
-                      <td>{{ locker.stationName }}</td>
-                      <td>{{ locker.compartmentNo }}</td>
-                      <td>{{ locker.size }}</td>
-                    </tr>
-                    <tr *ngIf="!availableLockers.length">
-                      <td colspan="3">No lockers are currently available.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <p class="empty-state" *ngIf="!hasLockerAvailabilityFilters">Select a route, transit point, and locker size for automatic locker selection.</p>
           </article>
         </div>
         <div class="table-card">
           <div class="table-title"><h3>Locker records</h3><span>{{ lockers.length }} station(s)</span></div>
-          <div class="responsive-table"><table><thead><tr><th>Transit point</th><th>Locker number</th><th>Size</th><th>Availability</th><th>Action</th></tr></thead><tbody>
-            <ng-container *ngFor="let station of lockers"><tr *ngFor="let compartment of station.compartments"><td>{{ station.name }}</td><td>{{ compartment.compartmentNo }}</td><td>{{ compartment.size }}</td><td><span class="status-pill" [class.inactive]="compartment.status !== 'AVAILABLE'">{{ compartment.status === 'AVAILABLE' ? 'Available' : compartment.status }}</span></td><td><button class="text-btn danger-text" (click)="deactivateCompartment(compartment)" [disabled]="busy || compartment.status !== 'AVAILABLE'">Deactivate</button></td></tr></ng-container>
+          <div class="responsive-table"><table><thead><tr><th>Station</th><th>Locker number</th><th>Size</th><th>Availability</th><th>Action</th></tr></thead><tbody>
+            <ng-container *ngFor="let station of lockers"><tr *ngFor="let compartment of station.compartments"><td>{{ station.name }}</td><td>{{ compartment.compartmentNo }}</td><td>{{ compartment.size }}</td><td><span class="status-pill" [class.inactive]="compartment.status !== 'AVAILABLE'">{{ lockerStatusLabel(compartment.status) }}</span></td><td><button class="text-btn danger-text" (click)="deactivateCompartment(compartment)" [disabled]="busy || compartment.status !== 'AVAILABLE'">Deactivate</button></td></tr></ng-container>
             <tr *ngIf="!lockers.length"><td colspan="5">No lockers found.</td></tr>
           </tbody></table></div>
         </div><br />
-        <div class="locker-grid">
-          <article class="locker-card" *ngFor="let locker of lockers">
-            <h3>{{ locker.name }}</h3>
-            <p>{{ locker.address }}</p>
-            <div class="compartment-grid">
-              <div
-                *ngFor="let c of locker.compartments"
-                [class.available]="c.status === 'AVAILABLE'"
-              >
-                <b>{{ c.compartmentNo }}</b
-                ><span>{{ c.size }}</span
-                ><em>{{ c.status }}</em>
-              </div>
-            </div>
-          </article>
-        </div>
         <div class="table-card">
-          <div class="table-title">
-            <h3>Smart locker assignment records</h3>
-            <span>{{ lockerAssignments.length }} active</span>
-          </div>
-          <div class="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Parcel</th>
-                  <th>Recipient</th>
-                  <th>Station</th>
-                  <th>Locker bay</th>
-                  <th>Assigned</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let assignment of lockerAssignments">
-                  <td>
-                    {{
-                      assignment.parcel?.trackingNumber || assignment.parcelId
-                    }}
-                  </td>
-                  <td>{{ assignment.parcel?.recipientName || "—" }}</td>
-                  <td>{{ assignment.stationName }}</td>
-                  <td>
-                    {{ assignment.compartmentNo }} ({{ assignment.size }})
-                  </td>
-                  <td>{{ assignment.assignedAt | date: "medium" }}</td>
-                  <td><span class="status-pill">Awaiting collection</span></td>
-                  <td>
-                    <button class="text-btn" (click)="regenerateLockerCode(assignment)" [disabled]="busy">
-                      Generate new code
-                    </button>
-                  </td>
-                </tr>
-                <tr *ngIf="!lockerAssignments.length">
-                  <td colspan="7">No active locker assignments.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <div class="table-title"><h3>Active locker assignments</h3><span>{{ lockerAssignments.length }} active</span></div>
+          <div class="responsive-table"><table>
+            <thead><tr><th>Parcel</th><th>Recipient</th><th>Station</th><th>Locker</th><th>Reserved</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let assignment of lockerAssignments">
+                <td>{{ assignment.parcel?.trackingNumber || assignment.parcelId }}</td>
+                <td>{{ assignment.parcel?.recipientName || '—' }}</td>
+                <td>{{ assignment.stationName }}</td>
+                <td>{{ assignment.compartmentNo }} ({{ assignment.size }})</td>
+                <td>{{ assignment.assignedAt | date: 'medium' }}</td>
+                <td><span class="status-pill">{{ assignment.placedAt ? 'Awaiting collection' : 'Awaiting placement' }}</span></td>
+                <td><button class="text-btn" *ngIf="assignment.placedAt" (click)="regenerateLockerCode(assignment)" [disabled]="busy">Generate new code</button></td>
+              </tr>
+              <tr *ngIf="!lockerAssignments.length"><td colspan="7">No active locker assignments.</td></tr>
+            </tbody>
+          </table></div>
         </div>
       </section>
+
       <section class="tab-content" *ngIf="activeTab === 'planning'">
         <div class="section-heading">
           <div>
@@ -773,8 +303,7 @@
                   <span
                     [style.width.%]="
                       (item._count /
-                        (availableLockers.length + lockerAssignments.length ||
-                          1)) *
+                        (totalLockers || 1)) *
                       100
                     "
                   ></span>

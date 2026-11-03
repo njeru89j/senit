@@ -97,7 +97,7 @@
                   <span class="rating-stars-compact" [style.color]="getRatingColor(driver.averageRating)">
                     {{ getRatingStars(driver.averageRating) }}
                   </span>
-                  <span class="rating-value-compact">{{ driver.averageRating.toFixed(1) }}</span>
+                  <span class="rating-value-compact">{{ (driver.averageRating || 0).toFixed(1) }}</span>
                 </div>
                 <div class="driver-stats-compact">
                   <span class="stat-item">
@@ -220,7 +220,7 @@
                   <div class="overall-rating-modern">
                     <div class="rating-circle">
                       <span class="rating-value" style="color: #000;">
-                        {{ analyticsData.customerReviews.overallRating.toFixed(1) }}
+                        {{ (analyticsData.customerReviews.overallRating || 0).toFixed(1) }}
                       </span>
                     </div>
                     <div class="rating-info">

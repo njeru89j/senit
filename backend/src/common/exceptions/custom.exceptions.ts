@@ -74,6 +74,17 @@ export class UserAlreadyExistsException extends BaseCustomException {
   }
 }
 
+export class PhoneAlreadyExistsException extends BaseCustomException {
+  readonly code = 'PHONE_ALREADY_EXISTS';
+  readonly context = 'User';
+
+  constructor(phone: string) {
+    super('An account with this phone number already exists', HttpStatus.CONFLICT, {
+      phone,
+    });
+  }
+}
+
 export class UserInactiveException extends BaseCustomException {
   readonly code = 'USER_INACTIVE';
   readonly context = 'User';

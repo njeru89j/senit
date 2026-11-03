@@ -15,7 +15,7 @@ model User {
   email    String   @unique
   password String
   name     String
-  phone    String?
+  phone    String?  @unique
   address  String?
   role     UserRole @default(CUSTOMER)
 
@@ -23,6 +23,8 @@ model User {
   licenseNumber String?      @unique
   vehicleNumber String?
   vehicleType   VehicleType?
+  maxLoadKg     Float?       // Maximum total parcel weight this vehicle can carry
+  maxDistanceKm Float?       // Maximum delivery route distance; motorcycles are capped at 80 km
   currentLat    Float?
   currentLng    Float?
   isAvailable   Boolean      @default(true)
@@ -102,15 +104,25 @@ model Parcel {
   // Driver assignment
   driverId              String? // Optional: assigned driver
   assignedAt            DateTime? // When parcel was assigned to driver
-  routeId               String? // Confirmed movement route
-  currentTransitPointId String?
+  routeId               String? // Route of the parcel's current journey leg
+  currentTransitPointId String? // Station holding the parcel when custody is STATION or HANDOVER
+
+  // Journey and custody
+  originTransitPointId       String?
+  destinationTransitPointId  String?
+  custody                    CustodyHolder @default(SENDER)
+  originConfirmedAt          DateTime?
+  originConfirmedBy          String?
+  readyForCollectionAt       DateTime?
+  collectionDeadlineAt       DateTime?
+  collectionOverdueAlertedAt DateTime?
 
   pickupAddress        String
   deliveryAddress      String
   preferredPickupAt    DateTime?
-  deliveryMethod       String?
+  deliveryMethod       String       @default("STATION_COLLECTION") // Final collection: STATION_COLLECTION | SMART_LOCKER
   currentLocation      String?
-  status               ParcelStatus @default(pending)
+  status               ParcelStatus @default(awaiting_confirmation)
   weight               Float
   quantity             Int          @default(1)
   category             String?
@@ -157,7 +169,11 @@ model Parcel {
   reviews       Review[]
   deliveryProof DeliveryProof?
   notifications Notification[]
+  legs          ParcelLeg[]
 
+  @@index([originTransitPointId])
+  @@index([destinationTransitPointId])
+  @@index([currentTransitPointId, status])
   @@index([senderName])
   @@index([senderEmail])
   @@index([recipientName])
@@ -316,6 +332,11 @@ enum NotificationType {
   DRIVER_ASSIGNED
   PAYMENT_RECEIVED
   REVIEW_RECEIVED
+  ASSIGNMENT_OFFERED
+  ASSIGNMENT_UPDATED
+  OFFICER_ACTION_REQUIRED
+  PARCEL_READY_FOR_COLLECTION
+  PARCEL_EXCEPTION
 }
 
 enum PaymentStatus {
@@ -375,21 +396,72 @@ model DriverDocument {
   @@map("driver_documents")
 }
 
+/// One driver offer for one parcel leg. It carries the acceptance window, the capacity reservation
+/// (ASSIGNED/ACCEPTED reserve weight, COLLECTED is loaded weight) and the driver's custody of the parcel.
 model ParcelAssignment {
-  id              String           @id @default(cuid())
-  parcelId        String
-  driverId        String
-  assignedBy      String
-  status          AssignmentStatus @default(ASSIGNED)
-  assignedAt      DateTime         @default(now())
-  acknowledgedAt  DateTime?
-  completedAt     DateTime?
-  rejectedAt      DateTime?
-  rejectionReason String?
+  id                 String           @id @default(cuid())
+  parcelId           String
+  driverId           String
+  assignedBy         String
+  legId              String?
+  tripId             String?
+  status             AssignmentStatus @default(ASSIGNED)
+  assignedAt         DateTime         @default(now())
+  acceptanceDeadline DateTime?
+  acceptedAt         DateTime?        @map("acknowledgedAt")
+  collectedAt        DateTime?
+  droppedAt          DateTime?
+  dropTransitPointId String? // Station the driver handed the parcel to (normally the leg destination)
+  completedAt        DateTime?
+  rejectedAt         DateTime?
+  rejectionReason    String?
+  expiredAt          DateTime?
+  cancelledAt        DateTime?
+  cancelledBy        String?
+  cancellationReason String?
+  reservedWeightKg   Float?
+
+  leg  ParcelLeg? @relation(fields: [legId], references: [id])
+  trip Trip?      @relation(fields: [tripId], references: [id])
 
   @@index([parcelId])
   @@index([driverId, status])
+  @@index([legId])
+  @@index([tripId, status])
+  @@index([status, acceptanceDeadline])
   @@map("parcel_assignments")
+}
+
+/// One frozen leg of a parcel's journey: a stretch of one route, in one direction, between two stations.
+model ParcelLeg {
+  id                      String          @id @default(cuid())
+  parcelId                String
+  sequence                Int
+  routeId                 String
+  direction               TripDirection
+  fromTransitPointId      String
+  toTransitPointId        String
+  isFinal                 Boolean
+  status                  ParcelLegStatus @default(PLANNED)
+  distanceKm              Float?
+  activatedAt             DateTime?
+  collectedAt             DateTime?
+  droppedAt               DateTime?
+  completedAt             DateTime?
+  noDriverReason          String?
+  lastAssignmentAttemptAt DateTime?
+  attentionNotifiedAt     DateTime?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  parcel      Parcel             @relation(fields: [parcelId], references: [id])
+  assignments ParcelAssignment[]
+
+  @@unique([parcelId, sequence])
+  @@index([status, fromTransitPointId])
+  @@index([toTransitPointId, status])
+  @@index([routeId, status])
+  @@map("parcel_legs")
 }
 
 model Route {
@@ -428,6 +500,8 @@ model RouteTransitPoint {
   transitPointId String
   sequence       Int
   instructions   String?
+  /// Road distance from the previous stop in sequence order; haversine between coordinates is used when absent.
+  distanceFromPreviousKm Float?
 
   @@unique([routeId, transitPointId])
   @@unique([routeId, sequence])
@@ -446,21 +520,37 @@ model TransitPointOfficer {
   @@map("transit_point_officers")
 }
 
-model Batch {
-  id            String      @id @default(cuid())
-  batchNumber   String      @unique
-  routeId       String
-  driverId      String?
-  parentBatchId String?
-  status        BatchStatus @default(CREATED)
-  createdAt     DateTime    @default(now())
-  closedAt      DateTime?
+/// A driver's run over one route in one direction, from a route endpoint to the opposite endpoint.
+/// CREATED = preparing at the start endpoint, IN_TRANSIT = started, CLOSED = completed at the end endpoint.
+/// Progress is (currentTransitPointId, atStop): standing at that stop, or departed from it.
+model Trip {
+  id                    String        @id @default(cuid())
+  tripNumber            String        @unique @map("batchNumber")
+  routeId               String
+  driverId              String?
+  parentBatchId         String? // Legacy batch-split lineage
+  direction             TripDirection @default(FORWARD)
+  startTransitPointId   String?
+  endTransitPointId     String?
+  currentTransitPointId String?
+  atStop                Boolean       @default(true)
+  status                TripStatus    @default(CREATED)
+  createdAt             DateTime      @default(now())
+  startedAt             DateTime?
+  completedAt           DateTime?
+  closedAt              DateTime?
+  cancelledAt           DateTime?
+  cancellationReason    String?
+
+  assignments ParcelAssignment[]
 
   @@index([routeId])
   @@index([parentBatchId])
+  @@index([driverId, status])
   @@map("batches")
 }
 
+/// Legacy batch manifest. Trips derive their load from parcel assignments; nothing writes this table any more.
 model BatchParcel {
   id        String    @id @default(cuid())
   batchId   String
@@ -475,31 +565,36 @@ model BatchParcel {
   @@map("batch_parcels")
 }
 
-model BatchEvent {
+/// Trip movement log: OPENED, STARTED, ARRIVED, DEPARTED, COMPLETED, CANCELLED.
+model TripEvent {
   id             String   @id @default(cuid())
-  batchId        String
+  tripId         String   @map("batchId")
   transitPointId String?
   type           String
   notes          String?
   createdBy      String
   createdAt      DateTime @default(now())
 
-  @@index([batchId, createdAt])
+  @@index([tripId, createdAt])
   @@map("batch_events")
 }
 
+/// Receiving-station verification of one driver-to-station handover.
+/// decision: VERIFIED | MISSING | DAMAGED | TAMPER_ALERT | UNEXPECTED (legacy rows: RECEIVED | CLEARED | DIVERTED | HELD).
 model TransitInspection {
-  id             String        @id @default(cuid())
-  batchId        String
+  id             String         @id @default(cuid())
+  tripId         String?        @map("batchId")
   parcelId       String
   transitPointId String
   officerId      String
-  condition      SealCondition
+  assignmentId   String?        @unique
+  legId          String?
+  condition      SealCondition?
   decision       String
   notes          String?
-  inspectedAt    DateTime      @default(now())
+  inspectedAt    DateTime       @default(now())
 
-  @@index([batchId, inspectedAt])
+  @@index([tripId, inspectedAt])
   @@index([parcelId, inspectedAt])
   @@index([transitPointId, officerId])
   @@map("transit_inspections")
@@ -543,6 +638,8 @@ model LockerAssignment {
   assignedAt    DateTime  @default(now())
   collectedAt   DateTime?
   cancelledAt   DateTime?
+  placedAt      DateTime?
+  endedReason   String? // COLLECTED | EXPIRED | CANCELLED | COUNTER_HANDOVER
 
   @@index([parcelId])
   @@index([compartmentId])
@@ -629,6 +726,10 @@ model TamperAlert {
   id            String          @id @default(cuid())
   parcelId      String
   sealScanId    String?
+  transitPointId String?
+  legId         String?
+  tripId        String?
+  assignmentId  String?
   type          TamperAlertType
   status        AlertStatus     @default(OPEN)
   details       String
@@ -639,6 +740,7 @@ model TamperAlert {
   resolvedAt    DateTime?
 
   @@index([parcelId, status])
+  @@index([transitPointId, status])
   @@map("tamper_alerts")
 }
 
@@ -708,19 +810,52 @@ enum DriverStatus {
 
 enum AssignmentStatus {
   ASSIGNED
-  ACKNOWLEDGED
+  ACCEPTED
   COLLECTED
+  DROPPED
   COMPLETED
   CANCELLED
   REJECTED
+  EXPIRED
 }
 
-enum BatchStatus {
+enum TripStatus {
   CREATED
   IN_TRANSIT
   SPLIT
   MERGED
   CLOSED
+  CANCELLED
+
+  @@map("BatchStatus")
+}
+
+enum TripDirection {
+  FORWARD
+  REVERSE
+}
+
+enum ParcelLegStatus {
+  PLANNED
+  AWAITING_DRIVER
+  DRIVER_ASSIGNED
+  IN_TRANSIT
+  AWAITING_VERIFICATION
+  COMPLETED
+  EXCEPTION
+  CANCELLED
+}
+
+/// Who physically holds a parcel. The holder is currentTransitPointId (STATION/HANDOVER),
+/// the COLLECTED assignment (DRIVER) or the active locker assignment (LOCKER).
+enum CustodyHolder {
+  SENDER
+  STATION
+  DRIVER
+  HANDOVER
+  LOCKER
+  RECIPIENT
+  UNKNOWN
 }
 
 enum LockerSize {
@@ -754,6 +889,12 @@ enum TamperAlertType {
   SKIPPED_TRANSIT_POINT
   INVALID_SEQUENCE
   UNAUTHORISED_SCAN
+  PARCEL_MISSING
+  PARCEL_DAMAGED
+  UNEXPECTED_PARCEL
+  ROUTE_UNAVAILABLE
+  CUSTODY_EXCEPTION
+  COLLECTION_OVERDUE
 }
 
 enum AlertStatus {

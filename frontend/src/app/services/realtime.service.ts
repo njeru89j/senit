@@ -47,12 +47,15 @@ export class RealtimeService {
   private driverAssignmentSubject = new Subject<DriverAssignment>();
   private parcelStatusSubject = new Subject<ParcelStatusUpdate>();
   private notificationSubject = new Subject<any>();
+  /** Parcel workflow changes (assignments, trips, station work) relevant to the signed-in user. */
+  private workflowSubject = new Subject<{ event: string; payload: any }>();
 
   // Observables
   public driverLocationUpdates$ = this.driverLocationSubject.asObservable();
   public driverAssignmentUpdates$ = this.driverAssignmentSubject.asObservable();
   public parcelStatusUpdates$ = this.parcelStatusSubject.asObservable();
   public notificationUpdates$ = this.notificationSubject.asObservable();
+  public workflowUpdates$ = this.workflowSubject.asObservable();
 
   constructor(private authService: AuthService) {}
 
@@ -144,6 +147,9 @@ export class RealtimeService {
       this.parcelStatusSubject.next(data);
     });
     this.socket.on('notificationCreated', (data: any) => this.notificationSubject.next(data));
+    for (const event of ['assignmentUpdate', 'tripUpdate', 'stationWorkUpdate', 'parcelStatusUpdate']) {
+      this.socket.on(event, (payload: any) => this.workflowSubject.next({ event, payload }));
+    }
 
     // Listen for confirmation messages
     this.socket.on('locationUpdated', (data: any) => {

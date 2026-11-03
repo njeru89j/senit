@@ -1,40 +1,103 @@
-import { ParcelStatus, PrismaClient, UserRole } from '@prisma/client';
+/**
+ * Checks the seeded operational network: stations, routes, officers, lockers, drivers, and that a
+ * parcel can actually be routed between any two stations.
+ *
+ *   npm run db:seed:verify
+ */
+import { LockerSize, UserRole, VehicleType } from '@prisma/client';
+import { PrismaService } from '../src/database/prisma.service';
+import { RouteNetwork } from '../src/common/route-planner';
+import { NETWORK_EMAIL_DOMAIN, ROUTES, RouteKey, STATIONS, StationKey, officerEmail, routeStops, stationId } from './network';
 
-const prisma = new PrismaClient();
+const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
+const check = (name: string, ok: boolean, detail = '') => checks.push({ name, ok, detail });
 
 async function main() {
-  const routeNames = ['Kisii-Nairobi', 'Nairobi-Meru', 'Mombasa-Nairobi', 'Nairobi-Kisumu', 'Nairobi-Eldoret', 'Nakuru-Kakamega', 'Nairobi-Nyeri', 'Kisumu-Busia', 'Meru-Embu', 'Nairobi-Garissa'];
-  const routes = await prisma.route.findMany({ where: { name: { in: routeNames } } });
-  const seededUsers = await prisma.user.count({ where: { OR: [{ email: 'sendit@gmail.com' }, { email: { endsWith: '@sendit.local' } }] } });
-  const routePoints = await prisma.routeTransitPoint.groupBy({ by: ['routeId'], where: { routeId: { in: routes.map(route => route.id) } }, _count: true });
-  const drivers = await prisma.user.findMany({ where: { role: UserRole.DRIVER, OR: [{ email: { endsWith: '@sendit.local' } }, { email: { in: ['kisii.driver@sendit.local', 'meru.driver@sendit.local'] } }] }, include: { driverProfile: true } });
-  const routeDriverCounts = new Map(routes.map(route => [route.id, drivers.filter(driver => driver.driverProfile?.routesServed.includes(route.id)).length]));
-  const parcelStatuses = await prisma.parcel.groupBy({ by: ['status'], where: { trackingNumber: { startsWith: 'SENDIT-SEED-' } }, _count: true });
-  const bulkParcels = parcelStatuses.reduce((sum, row) => sum + row._count, 0);
-  const requiredStatuses = [ParcelStatus.pending, ParcelStatus.assigned, ParcelStatus.picked_up, ParcelStatus.in_transit, ParcelStatus.delivered_to_recipient, ParcelStatus.delivered, ParcelStatus.completed, ParcelStatus.cancelled];
-  const highVolumeUsers = await prisma.user.findMany({ where: { email: { in: ['customer01@sendit.local', 'customer02@sendit.local', 'customer06@sendit.local'] } }, select: { email: true, totalParcelsEverSent: true, totalParcelsReceived: true } });
-  const seededForecasts = await prisma.demandForecast.count({ where: { model: 'seed-four-week-recency-weighted-v2' } });
-  const deactivatedDriver = await prisma.user.findUnique({ where: { email: 'driver15@sendit.local' }, include: { driverProfile: true } });
-  const activePoints = await prisma.transitPoint.findMany({ where: { active: true }, select: { id: true } });
-  const officerAssignments = await prisma.transitPointOfficer.groupBy({ by: ['transitPointId'], _count: true });
-  const assignedOfficerRows = await prisma.transitPointOfficer.findMany({ select: { officerId: true } });
-  const failures = [
-    seededUsers < 40 && `expected at least 40 seeded users, found ${seededUsers}`,
-    routes.length !== 10 && `expected 10 seeded routes, found ${routes.length}`,
-    routePoints.some(row => row._count < 3 || row._count > 5) && 'every seeded route must have 3-5 ordered transit points',
-    drivers.length < 15 && `expected at least 15 seeded drivers, found ${drivers.length}`,
-    [...routeDriverCounts.values()].some(count => count < 2) && 'every route must be covered by more than one driver',
-    bulkParcels !== 200 && `expected 200 bulk parcels, found ${bulkParcels}`,
-    requiredStatuses.some(status => !parcelStatuses.some(row => row.status === status && row._count > 0)) && 'every requested parcel status must be represented',
-    !highVolumeUsers.some(user => user.totalParcelsEverSent >= 30) && 'a high-volume sender is required',
-    !highVolumeUsers.some(user => user.totalParcelsReceived >= 50) && 'a high-volume recipient is required',
-    seededForecasts < 8 && 'seeded demand forecasts are missing',
-    (deactivatedDriver?.isActive !== false || deactivatedDriver.driverProfile?.approvalStatus !== 'DEACTIVATED') && 'deactivated driver state is missing',
-    activePoints.some(point => !officerAssignments.some(row => row.transitPointId === point.id && row._count > 0)) && 'every transit point must have a nominated officer',
-    new Set(assignedOfficerRows.map(row => row.officerId)).size !== assignedOfficerRows.length && 'an officer is assigned to more than one transit point',
-  ].filter(Boolean);
-  if (failures.length) throw new Error(failures.join('; '));
-  console.log(JSON.stringify({ seededUsers, routes: routes.length, transitPointsPerRoute: routePoints.map(row => row._count), drivers: drivers.length, minimumDriversPerRoute: Math.min(...routeDriverCounts.values()), bulkParcels, parcelStatuses: Object.fromEntries(parcelStatuses.map(row => [row.status, row._count])), highVolumeUsers, seededForecasts, deactivatedDriver: deactivatedDriver?.email }, null, 2));
+  const prisma = new PrismaService();
+  await prisma.$connect();
+  try {
+    const stationKeys = Object.keys(STATIONS) as StationKey[];
+    const routeKeys = Object.keys(ROUTES) as RouteKey[];
+
+    const points = await prisma.transitPoint.findMany({ where: { id: { startsWith: 'net-' } } });
+    check('every station exists and is active', points.length === stationKeys.length && points.every((point) => point.active), `${points.length}/${stationKeys.length}`);
+
+    const routes = await prisma.route.findMany({ where: { id: { startsWith: 'net-' } } });
+    const memberships = await prisma.routeTransitPoint.findMany({ where: { routeId: { startsWith: 'net-' } }, orderBy: { sequence: 'asc' } });
+    check('every route exists and is active', routes.length === routeKeys.length && routes.every((route) => route.active), `${routes.length}/${routeKeys.length}`);
+    const stopCounts = routes.map((route) => memberships.filter((stop) => stop.routeId === route.id).length);
+    check('each route has 3 to 5 stops', stopCounts.every((count) => count >= 3 && count <= 5), `stops per route: ${[...new Set(stopCounts)].sort().join(', ')}`);
+    check('distances are recorded between stops', memberships.filter((stop) => stop.sequence > 1).every((stop) => (stop.distanceFromPreviousKm ?? 0) > 0));
+
+    const officers = await prisma.user.findMany({ where: { role: UserRole.TRANSIT_OFFICER, email: { endsWith: `@${NETWORK_EMAIL_DOMAIN}` } } });
+    const nominations = await prisma.transitPointOfficer.findMany({ where: { transitPointId: { startsWith: 'net-' } } });
+    const stationsWithOfficer = new Set(nominations.map((row) => row.transitPointId));
+    check('one officer per station', officers.length === stationKeys.length && stationsWithOfficer.size === stationKeys.length, `${officers.length} officers, ${stationsWithOfficer.size} stations covered`);
+    check('officer emails follow <station>@sendit.com', officers.some((officer) => officer.email === officerEmail('meru')), officerEmail('meru'));
+
+    const lockerStations = await prisma.lockerStation.findMany({ where: { id: { startsWith: 'net-' } } });
+    const compartments = await prisma.lockerCompartment.groupBy({ by: ['stationId', 'size'], _count: { _all: true }, where: { stationId: { startsWith: 'net-' } } });
+    const perStation = new Map<string, number>();
+    for (const row of compartments) perStation.set(row.stationId, (perStation.get(row.stationId) ?? 0) + row._count._all);
+    const sizes = new Set(compartments.map((row) => row.size));
+    check('every station has a locker bank', lockerStations.length === stationKeys.length, `${lockerStations.length}/${stationKeys.length}`);
+    check('40 lockers at every station', [...perStation.values()].every((count) => count === 40) && perStation.size === stationKeys.length, `total ${[...perStation.values()].reduce((a, b) => a + b, 0)}`);
+    check('lockers come in four sizes', sizes.size === 4, [...sizes].join(', '));
+
+    const drivers = await prisma.user.findMany({ where: { role: UserRole.DRIVER, email: { endsWith: `@${NETWORK_EMAIL_DOMAIN}` } }, include: { driverProfile: true } });
+    check('ten drivers per route', drivers.length === routeKeys.length * 10, `${drivers.length} drivers`);
+    const byRoute = new Map<string, typeof drivers>();
+    for (const driver of drivers) {
+      const route = driver.driverProfile?.routesServed[0] ?? 'none';
+      byRoute.set(route, [...(byRoute.get(route) ?? []), driver]);
+    }
+    check('every route is staffed', byRoute.size === routeKeys.length && [...byRoute.values()].every((list) => list.length === 10), `${byRoute.size} routes staffed`);
+    check('two motorcycles per route', [...byRoute.values()].every((list) => list.filter((driver) => driver.vehicleType === VehicleType.MOTORCYCLE).length === 2));
+    check('every driver has a vehicle and capacity', drivers.every((driver) => driver.vehicleNumber && (driver.maxLoadKg ?? 0) > 0));
+    check('driver vehicle numbers are unique', new Set(drivers.map((driver) => driver.vehicleNumber)).size === drivers.length);
+
+    // Routing: the planner must find a journey between every pair of stations, in both directions.
+    const network = new RouteNetwork(routes, memberships, points);
+    const unreachable: string[] = [];
+    let maxLegs = 0;
+    for (const from of stationKeys) {
+      for (const to of stationKeys) {
+        if (from === to) continue;
+        const plan = network.plan(stationId(from), stationId(to));
+        if (!plan) unreachable.push(`${STATIONS[from].name} → ${STATIONS[to].name}`);
+        else maxLegs = Math.max(maxLegs, plan.length);
+      }
+    }
+    const pairs = stationKeys.length * (stationKeys.length - 1);
+    check('a route exists between every pair of stations', unreachable.length === 0, unreachable.length ? `${unreachable.length} of ${pairs} unreachable: ${unreachable.slice(0, 3).join(', ')}…` : `${pairs} pairs, at most ${maxLegs} legs`);
+
+    // Hub shape: every route is a spoke out of Nairobi and no station sits on two routes.
+    check('every route starts at Nairobi', routeKeys.every((key) => routeStops(key)[0][0] === 'nairobi'));
+    const onRoutes = new Map<StationKey, number>();
+    for (const key of routeKeys) for (const [stop] of routeStops(key)) onRoutes.set(stop, (onRoutes.get(stop) ?? 0) + 1);
+    const shared = [...onRoutes.entries()].filter(([stop, count]) => stop !== 'nairobi' && count > 1);
+    check('routes do not overlap (no station on two routes)', shared.length === 0, shared.length ? shared.map(([stop, count]) => `${STATIONS[stop].name}×${count}`).join(', ') : `Nairobi is on all ${routeKeys.length}`);
+    check('journeys between spokes need one transfer at most', maxLegs <= 2, `at most ${maxLegs} legs`);
+
+    const crossCountry = network.plan(stationId('mombasa'), stationId('kisumu'));
+    check('a cross-country journey transfers at Nairobi', !!crossCountry && crossCountry.length === 2 && crossCountry[0].toTransitPointId === stationId('nairobi'), crossCountry ? network.describe(crossCountry) : 'no plan');
+
+    const sameSpoke = network.plan(stationId('ruiru'), stationId('thika'));
+    check('journeys along one spoke stay on it', !!sameSpoke && sameSpoke.length === 1, sameSpoke ? network.describe(sameSpoke) : 'no plan');
+
+    const officerAddresses = officers.filter((officer) => (officer.address ?? '').length > 20);
+    check('every officer has a street address', officerAddresses.length === officers.length, officers[0]?.address ?? 'none');
+
+    const failed = checks.filter((item) => !item.ok);
+    for (const item of checks) console.log(`${item.ok ? 'PASS' : 'FAIL'}  ${item.name}${item.detail ? ` — ${item.detail}` : ''}`);
+    console.log(`\n${checks.length - failed.length}/${checks.length} checks passed`);
+    if (failed.length) process.exitCode = 1;
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
-main().finally(() => prisma.$disconnect());
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

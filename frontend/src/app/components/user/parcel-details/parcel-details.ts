@@ -8,17 +8,19 @@ import { MapLocation, MapCoordinates, MapError, MapMarkerType } from '../../../t
 import { ToastService } from '../../shared/toast/toast.service';
 import { SidebarComponent } from '../../shared/sidebar/sidebar';
 import { ParcelsService } from '../../../services/parcels.service';
+import { parcelStatusLabel } from '../../../utils/parcel-status';
 import { AuthService } from '../../../services/auth.service';
 import { ReviewService, CreateReviewDto, UpdateReviewDto, ReviewResponseDto } from '../../../services/review.service';
 import { RealtimeService, DriverLocation } from '../../../services/realtime.service';
 import { OperationsService } from '../../../services/operations.service';
 import { Subscription } from 'rxjs';
+import { debounceTime, filter } from 'rxjs/operators';
 import * as L from 'leaflet';
 
 interface Parcel {
   id: string;
   weight: number;
-  status: 'Pending' | 'In Transit' | 'Out for Delivery' | 'Delivered' | 'Completed' | 'Cancelled';
+  status: 'Pending' | 'In Transit' | 'Ready for Collection' | 'Delivered' | 'Completed' | 'Cancelled';
   originalStatus?: string; // Store the original backend status
   pickupAddress: string;
   deliveryAddress: string;
@@ -230,6 +232,11 @@ export class ParcelDetails implements OnInit, OnDestroy {
 
   trackingEvents: TrackingEvent[] = [];
   trackingOverview: any = null;
+  /** Raw API parcel from the server. The internal journey plan is staff-only. */
+  apiParcel: any = null;
+  stations: any[] = [];
+  editing = false;
+  edit = { pickupTransitPointId: '', destinationTransitPointId: '', weight: 0, collectionMethod: 'STATION_COLLECTION' };
 
   // Map-related properties
   mapMarkers: MapLocation[] = [];
@@ -243,6 +250,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
   isDriverTrackingEnabled: boolean = false;
 
   private driverLocationSubscription: Subscription | null = null;
+  private workflowSubscription: Subscription | null = null;
   lockerRequestBusy = false;
   lockerCollectionCode = '';
   lockerExtensionHours = 12;
@@ -274,12 +282,20 @@ export class ParcelDetails implements OnInit, OnDestroy {
         }
       }
     );
+
+    // A re-plan or destination change by staff shows up here without a manual refresh.
+    this.realtimeService.connect();
+    this.workflowSubscription = this.realtimeService.workflowUpdates$.pipe(
+      filter(({ payload }) => payload?.parcelId === this.parcelId),
+      debounceTime(500),
+    ).subscribe(() => { if (!this.editing && !this.lockerRequestBusy) this.loadParcelFromApi(); });
   }
 
   ngOnDestroy() {
     if (this.driverLocationSubscription) {
       this.driverLocationSubscription.unsubscribe();
     }
+    this.workflowSubscription?.unsubscribe();
   }
 
   toggleDriverTracking(): void {
@@ -354,6 +370,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
       next: (response: any) => {
         console.log('Parcel data from API:', response);
         console.log('Driver data from API:', response.driver);
+        this.apiParcel = response;
         this.parcel = this.mapApiResponseToParcel(response);
         console.log('Mapped parcel data:', this.parcel);
         console.log('Mapped driver data:', this.parcel?.driver);
@@ -387,8 +404,8 @@ export class ParcelDetails implements OnInit, OnDestroy {
   requestLocker(): void {
     if (!this.parcel) return;
     this.lockerRequestBusy = true;
-    this.operationsService.requestLocker({ parcelId: this.parcel.id, size: 'MEDIUM' }).subscribe({
-      next: () => { this.lockerRequestBusy = false; this.toastService.showSuccess('Locker request sent to the admin. You will receive a collection code when it is approved.'); },
+    this.operationsService.requestLocker({ parcelId: this.parcel.id }).subscribe({
+      next: (result: any) => { this.lockerRequestBusy = false; this.toastService.showSuccess(result?.message ?? 'Locker requested.'); this.loadParcelFromApi(); },
       error: (error: any) => { this.lockerRequestBusy = false; this.toastService.showError(error.error?.message ?? 'Could not request a locker'); }
     });
   }
@@ -400,6 +417,44 @@ export class ParcelDetails implements OnInit, OnDestroy {
     this.operationsService.requestLockerExtension(assignmentId, this.lockerExtensionHours * 60).subscribe({
       next: () => { this.lockerRequestBusy = false; this.toastService.showSuccess('Locker time extension request submitted'); },
       error: () => { this.lockerRequestBusy = false; },
+    });
+  }
+
+  get isSenderUser(): boolean { return !!this.apiParcel && this.apiParcel.senderId === this.currentUser?.id; }
+  get isRecipientUser(): boolean { return !!this.apiParcel && this.apiParcel.recipientId === this.currentUser?.id; }
+  /** The 12-hour counter window has passed; collection then needs staff at the counter. */
+  get collectionOverdue(): boolean {
+    const deadline = this.apiParcel?.collectionDeadlineAt;
+    return !!deadline && new Date(deadline).getTime() < Date.now();
+  }
+
+  get canEditBooking(): boolean { return this.isSenderUser && this.apiParcel?.status === 'awaiting_confirmation'; }
+
+  startEdit(): void {
+    this.edit = {
+      pickupTransitPointId: this.apiParcel.originTransitPointId ?? '',
+      destinationTransitPointId: this.apiParcel.destinationTransitPointId ?? '',
+      weight: this.apiParcel.weight,
+      collectionMethod: this.apiParcel.deliveryMethod ?? 'STATION_COLLECTION',
+    };
+    if (!this.stations.length) this.operationsService.publicTransitPoints().subscribe((points) => (this.stations = points));
+    this.editing = true;
+  }
+
+  saveEdit(): void {
+    this.lockerRequestBusy = true;
+    this.parcelsService.updateParcel(this.parcelId, { ...this.edit, weight: Number(this.edit.weight) } as any).subscribe({
+      next: () => { this.lockerRequestBusy = false; this.editing = false; this.toastService.showSuccess('Booking updated.'); this.loadParcelFromApi(); },
+      error: (error: any) => { this.lockerRequestBusy = false; this.toastService.showError(error?.error?.message ?? error?.message ?? 'Could not update the booking'); },
+    });
+  }
+
+  cancelBooking(): void {
+    if (!confirm('Cancel this booking? This cannot be undone.')) return;
+    this.lockerRequestBusy = true;
+    this.parcelsService.deleteParcel(this.parcelId).subscribe({
+      next: () => { this.lockerRequestBusy = false; this.toastService.showSuccess('Booking cancelled.'); this.loadParcelFromApi(); },
+      error: (error: any) => { this.lockerRequestBusy = false; this.toastService.showError(error?.error?.message ?? error?.message ?? 'Could not cancel the booking'); },
     });
   }
 
@@ -461,24 +516,27 @@ export class ParcelDetails implements OnInit, OnDestroy {
     };
   }
 
-  private mapStatus(apiStatus: string): 'Pending' | 'In Transit' | 'Out for Delivery' | 'Delivered' | 'Completed' | 'Cancelled' {
+  private mapStatus(apiStatus: string): 'Pending' | 'In Transit' | 'Ready for Collection' | 'Delivered' | 'Completed' | 'Cancelled' {
     switch (apiStatus.toLowerCase()) {
+      case 'awaiting_confirmation':
       case 'pending':
-      case 'assigned':
+      case 'created':
         return 'Pending';
-      case 'picked_up':
-      case 'in_transit':
-        return 'In Transit';
-      case 'delivered_to_recipient':
-        return 'Delivered';
+      case 'at_destination':
+      case 'locker_assigned':
+      case 'in_locker':
+        return 'Ready for Collection';
       case 'delivered':
+      case 'delivered_to_recipient':
+      case 'collected_from_locker':
         return 'Delivered';
       case 'completed':
         return 'Completed';
       case 'cancelled':
+      case 'returned':
         return 'Cancelled';
       default:
-        return 'Pending';
+        return 'In Transit';
     }
   }
 
@@ -714,26 +772,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
   }
 
   private getStatusDisplayName(status: string): string {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return 'Order Placed';
-      case 'assigned':
-        return 'Driver Assigned';
-      case 'picked_up':
-        return 'Picked Up';
-      case 'in_transit':
-        return 'In Transit';
-      case 'delivered_to_recipient':
-        return 'Out for Delivery';
-      case 'delivered':
-        return 'Delivered';
-      case 'completed':
-        return 'Completed';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return status;
-    }
+    return parcelStatusLabel(status);
   }
 
   private getStatusDescription(status: string): string {
@@ -853,7 +892,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
         });
         break;
         
-      case 'Out for Delivery':
+      case 'Ready for Collection':
         // Use actual pickup date if available, otherwise generate estimated date
         let pickupDateOutForDelivery: Date;
         if (this.parcel.scheduledPickup && this.parcel.scheduledPickup !== 'TBD') {
@@ -873,7 +912,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
         
         this.trackingEvents.push({
           id: this.parcel.driver && this.parcel.driver.name ? '6' : '5',
-          status: 'Out for Delivery',
+          status: 'Ready for Collection',
           location: 'Local Facility',
           timestamp: this.formatDate(new Date(baseDate.getTime() - 1 * 24 * 60 * 60 * 1000)),
           description: 'Parcel is out for delivery',
@@ -911,7 +950,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
         
         this.trackingEvents.push({
           id: this.parcel.driver && this.parcel.driver.name ? '5' : '4',
-          status: 'Out for Delivery',
+          status: 'Ready for Collection',
           location: 'Local Facility',
           timestamp: this.formatDate(new Date(baseDate.getTime() - 1 * 24 * 60 * 60 * 1000)),
           description: 'Parcel is out for delivery',
@@ -958,7 +997,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
         
         this.trackingEvents.push({
           id: '4',
-          status: 'Out for Delivery',
+          status: 'Ready for Collection',
           location: 'Local Facility',
           timestamp: this.formatDate(new Date(baseDate.getTime() - 1 * 24 * 60 * 60 * 1000)),
           description: 'Parcel is out for delivery',
@@ -1116,11 +1155,15 @@ export class ParcelDetails implements OnInit, OnDestroy {
     return 'TBD';
   }
 
+  statusLabel(status: string): string {
+    return parcelStatusLabel(status);
+  }
+
   getStatusClass(status: string): string {
     switch (status) {
       case 'Pending': return 'status-pending';
       case 'In Transit': return 'status-transit';
-      case 'Out for Delivery': return 'status-delivery';
+      case 'Ready for Collection': return 'status-delivery';
       case 'Delivered': return 'status-delivered';
       case 'Completed': return 'status-completed';
       case 'Cancelled': return 'status-cancelled';
@@ -1133,7 +1176,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
       case 'Order Placed': return 'event-placed';
       case 'Picked Up': return 'event-picked';
       case 'In Transit': return 'event-transit';
-      case 'Out for Delivery': return 'event-delivery';
+      case 'Ready for Collection': return 'event-delivery';
       case 'Delivered': return 'event-delivered';
       case 'Completed': return 'event-completed';
       case 'Cancelled': return 'event-cancelled';
@@ -1498,7 +1541,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
         return 25;
       case 'In Transit':
         return 60;
-      case 'Out for Delivery':
+      case 'Ready for Collection':
         return 80;
       case 'Delivered':
         return 90;

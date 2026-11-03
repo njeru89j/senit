@@ -1093,3 +1093,5 @@
 .instructions-section {
   position: relative;
 } 
+.trip-hint { margin: 12px 0 0; color: #475467; font-size: .9rem; }
+.trip-hint a { color: #7a6b12; font-weight: 600; cursor: pointer; text-decoration: underline; }

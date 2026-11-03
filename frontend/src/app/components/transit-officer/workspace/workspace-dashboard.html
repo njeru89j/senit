@@ -1,19 +1,294 @@
 <div class="officer-shell">
   <app-sidebar></app-sidebar>
   <main>
-    <header class="dashboard-header"><div><span>TRANSIT CONTROL</span><h1>{{ assignedTransitPoint?.name || 'Transit Officer Dashboard' }}</h1><p>Manage incoming parcels, departures, and smart-locker collection.</p></div><button class="refresh-button" (click)="load()"><i class="fas fa-sync-alt"></i> Refresh</button></header>
-    <p class="message" *ngIf="message">{{message}}</p>
-    <section class="stats-grid"><article><i class="fas fa-box-open"></i><span>Awaiting confirmation</span><strong>{{ awaitingConfirmationParcels.length }}</strong></article><article><i class="fas fa-truck-loading"></i><span>Ready for driver</span><strong>{{ confirmedParcels.length }}</strong></article><article><i class="fas fa-route"></i><span>Active batches</span><strong>{{ batches.length }}</strong></article><article><i class="fas fa-lock"></i><span>Available lockers</span><strong>{{ availableLockerCount }}</strong></article></section>
-    <nav><button [class.active]="tab==='batches'" (click)="switchTab('batches')">Parcels</button><button [class.active]="tab==='handoffs'" (click)="switchTab('handoffs')">En-route</button><button [class.active]="tab==='lockers'" (click)="switchTab('lockers')">Locker requests</button><button [class.active]="tab==='drivers'" (click)="switchTab('drivers')">Drivers</button></nav>
-    <section *ngIf="tab==='batches'" class="panel">
-      <div class="panel-heading"><div><h2>Parcels at your transit point</h2><p>Search and filter all incoming, unconfirmed, and driver-ready parcels in one place.</p></div></div>
-      <div class="parcel-toolbar"><label class="search"><i class="fas fa-search"></i><input [(ngModel)]="parcelSearch" placeholder="Search tracking number, recipient or location"></label><label>Status<select [(ngModel)]="parcelStatusFilter"><option value="">All statuses</option><option value="incoming">Incoming</option><option value="awaiting_confirmation">Awaiting confirmation</option><option value="awaiting_driver_assignment">Ready for driver</option><option value="at_transit_point">At transit point</option><option value="at_destination">At destination</option></select></label><button class="clear-filter" type="button" (click)="clearParcelFilters()" [disabled]="!parcelSearch && !parcelStatusFilter">Clear filters</button></div>
-      <article class="parcel-row" *ngFor="let p of filteredParcelRows"><div><b>{{p.trackingNumber}}</b><p>{{p.recipientName || 'Recipient'}} · {{p.pickupAddress || p.currentLocation || 'In transit'}} → {{p.deliveryAddress}}</p><small [class.confirmed]="p.status === 'awaiting_driver_assignment'">{{ p.incoming ? 'Incoming' : statusLabel(p.status) }}<span *ngIf="p.batchNumber"> · {{ p.batchNumber }}</span></small></div><button *ngIf="p.incoming" (click)="receiveAndVerify(p)" [disabled]="busy">Receive & verify</button><button *ngIf="p.status === 'awaiting_confirmation'" (click)="confirmReceived(p)" [disabled]="busy">Confirm received</button><button *ngIf="p.status === 'awaiting_driver_assignment'" (click)="switchTab('handoffs')">Assign driver</button></article>
-      <p class="empty" *ngIf="!filteredParcelRows.length">No parcels match your search or filter.</p>
-      <article class="receipt-card" *ngIf="receipt"><div><h3>Transit receipt</h3><p>{{ receipt.trackingNumber }}</p><small>Security seal: {{ receipt.sealIdentifier }}</small></div><img [src]="receipt.qrDataUrl" alt="Parcel receipt QR code"><button type="button" (click)="receipt = null">Close</button></article>
+    <header class="dashboard-header">
+      <div>
+        <span>{{ isAdmin ? 'TRANSIT CONTROL · ADMIN' : 'TRANSIT CONTROL' }}</span>
+        <h1>{{ stationTitle }}</h1>
+        <p>Receive parcels, watch automatic driver assignment, verify hand-overs and release parcels to recipients.</p>
+      </div>
+      <div class="header-actions">
+        <label *ngIf="isAdmin" class="station-picker">Transit point
+          <select [(ngModel)]="stationId" (change)="changeStation()">
+            <option value="">All transit points</option>
+            <option *ngFor="let p of points" [value]="p.id">{{ p.name }}</option>
+          </select>
+        </label>
+        <button class="refresh-button" (click)="load()" [disabled]="busy"><i class="fas fa-sync-alt"></i> Refresh</button>
+      </div>
+    </header>
+
+    <p class="message" [class.error]="messageKind === 'error'" *ngIf="message">{{ message }}</p>
+
+    <section class="stats-grid" *ngIf="data">
+      <article (click)="switchTab('receive')"><i class="fas fa-box-open"></i><span>Awaiting drop-off confirmation</span><strong>{{ counts.awaitingConfirmation || 0 }}</strong></article>
+      <article (click)="switchTab('drivers')" [class.attention]="counts.awaitingDriver"><i class="fas fa-user-clock"></i><span>Waiting for a driver</span><strong>{{ counts.awaitingDriver || 0 }}</strong></article>
+      <article (click)="switchTab('arrivals')" [class.attention]="counts.toVerify"><i class="fas fa-clipboard-check"></i><span>Hand-overs to verify</span><strong>{{ counts.toVerify || 0 }}</strong></article>
+      <article (click)="switchTab('arrivals')"><i class="fas fa-truck"></i><span>Incoming parcels</span><strong>{{ counts.incoming || 0 }}</strong></article>
+      <article (click)="switchTab('collection')"><i class="fas fa-hand-holding"></i><span>Ready / overdue collection</span><strong>{{ (counts.readyForCollection || 0) + (counts.overdue || 0) }}</strong></article>
+      <article (click)="switchTab('exceptions')" [class.attention]="counts.exceptions || counts.legExceptions"><i class="fas fa-exclamation-triangle"></i><span>Exceptions</span><strong>{{ (counts.exceptions || 0) + (counts.legExceptions || 0) }}</strong></article>
     </section>
-    <section *ngIf="tab==='handoffs'" class="panel"><h2>Create an en-route delivery</h2><div class="form-grid"><label>Transit point<select [(ngModel)]="handoff.transitPointId"><option value="">Select point</option><option *ngFor="let p of points" [value]="p.id">{{p.name}}</option></select></label><label>Route<select [(ngModel)]="handoff.routeId"><option value="">Select route</option><option *ngFor="let r of routes" [value]="r.id">{{r.name}}</option></select></label><label>Driver<select [(ngModel)]="handoff.driverId"><option value="">Select driver</option><option *ngFor="let driver of drivers" [value]="driver.id">{{driver.name}}</option></select></label></div><label class="parcel-choice" *ngFor="let p of handoffParcels"><input type="checkbox" [checked]="handoff.parcelIds.includes(p.id)" (change)="toggleParcel(p.id)">{{p.trackingNumber}} — {{p.deliveryAddress}}</label><button (click)="handOff()" [disabled]="busy || !handoff.routeId || !handoff.transitPointId || !handoff.driverId || !handoff.parcelIds.length">Create en-route delivery</button></section>
-    <section *ngIf="tab==='lockers'" class="panel"><h2>Confirm locker fit</h2><p>Check parcel fit, then the system allocates the next suitable locker and emails the recipient.</p><article class="parcel-row" *ngFor="let p of pendingLockerRequests"><div><b>{{p.trackingNumber}}</b><p>{{p.weight}} kg · {{lockerRequest(p)?.requestedMinutes / 60}} hours requested</p></div><label>Confirmed size<select [(ngModel)]="lockerFitSizes[lockerRequest(p)?.id]"><option value="SMALL">Small</option><option value="MEDIUM">Medium</option><option value="LARGE">Large</option><option value="EXTRA_LARGE">Extra large</option></select></label><button (click)="confirmLockerFit(p)" [disabled]="busy">Confirm fit & allocate</button></article><p class="empty" *ngIf="!pendingLockerRequests.length">No pending locker requests.</p></section>
-    <section *ngIf="tab==='drivers'" class="panel"><h2>Approved drivers on your routes</h2><div class="driver-grid"><article *ngFor="let d of drivers"><b>{{d.name}}</b><p>{{routeName(d.driverProfile?.currentRouteId)}}</p><small>{{d.vehicleNumber || 'Vehicle not listed'}}</small></article></div><p class="empty" *ngIf="!drivers.length">No approved route drivers are available.</p></section>
+
+    <nav>
+      <button [class.active]="tab === 'receive'" (click)="switchTab('receive')">Receive</button>
+      <button [class.active]="tab === 'drivers'" (click)="switchTab('drivers')">Driver assignment <b *ngIf="counts.awaitingDriver">{{ counts.awaitingDriver }}</b></button>
+      <button [class.active]="tab === 'arrivals'" (click)="switchTab('arrivals')">Arrivals &amp; verification <b *ngIf="counts.toVerify">{{ counts.toVerify }}</b></button>
+      <button [class.active]="tab === 'transfers'" (click)="switchTab('transfers')">Transfers</button>
+      <button [class.active]="tab === 'collection'" (click)="switchTab('collection')">Collection &amp; lockers <b *ngIf="counts.lockerPlacement || counts.overdue">{{ (counts.lockerPlacement || 0) + (counts.overdue || 0) }}</b></button>
+      <button [class.active]="tab === 'exceptions'" (click)="switchTab('exceptions')">Exceptions <b *ngIf="(counts.exceptions || 0) + (counts.legExceptions || 0)">{{ (counts.exceptions || 0) + (counts.legExceptions || 0) }}</b></button>
+      <button [class.active]="tab === 'fleet'" (click)="switchTab('fleet')">Drivers on route</button>
+    </nav>
+
+    <div class="empty" *ngIf="!data && busy"><i class="fas fa-spinner fa-spin"></i> Loading station work…</div>
+
+    <ng-container *ngIf="data">
+      <!-- RECEIVE -->
+      <section class="panel" *ngIf="tab === 'receive'">
+        <div class="panel-heading"><div><h2>Parcels booked for drop-off here</h2><p>Confirm only parcels physically handed over. Confirmation freezes the journey and assigns a driver automatically.</p></div></div>
+        <article class="parcel-row" *ngFor="let p of q.awaitingConfirmation">
+          <div>
+            <b>{{ p.trackingNumber }}</b>
+            <p>{{ p.origin }} → {{ p.destination }} · {{ p.weight }} kg · {{ p.deliveryMethod === 'SMART_LOCKER' ? 'Smart locker' : 'Station collection' }}</p>
+            <small class="muted">From {{ p.senderName }} to {{ p.recipientName }} · booked {{ p.createdAt | date: 'MMM d, HH:mm' }}</small>
+          </div>
+          <div class="row-actions"><button (click)="confirmReceived(p)" [disabled]="busy">Confirm received</button></div>
+        </article>
+        <p class="empty" *ngIf="!q.awaitingConfirmation?.length">No parcels are waiting to be dropped off here.</p>
+        <article class="receipt-card" *ngIf="receipt">
+          <div><h3>Transit receipt ready</h3><p>{{ receipt.trackingNumber }}</p><small>Security seal: {{ receipt.sealIdentifier }}</small></div>
+          <img [src]="receipt.qrDataUrl" alt="Parcel receipt QR code">
+          <button type="button" class="print-receipt" (click)="printReceipt()"><i class="fas fa-print"></i> Print receipt</button>
+          <button type="button" class="close-receipt" (click)="receipt = null">Close</button>
+        </article>
+      </section>
+
+      <!-- DRIVER ASSIGNMENT -->
+      <section class="panel" *ngIf="tab === 'drivers'">
+        <div class="panel-heading"><div><h2>Waiting for a driver</h2><p>Assignment is automatic and retried when drivers open trips or free capacity. You are alerted once per parcel.</p></div></div>
+        <article class="parcel-row" *ngFor="let item of q.awaitingDriver">
+          <div>
+            <b>{{ item.trackingNumber }}</b> <span class="chip" *ngIf="item.isTransfer">Transfer</span>
+            <p>{{ item.from }} → {{ item.to }} · {{ item.weight }} kg</p>
+            <small class="alert">No eligible driver: {{ item.noDriverMessage }}</small>
+            <small class="muted">Waiting since {{ item.waitingSince | date: 'MMM d, HH:mm' }} · last checked {{ item.lastAttemptAt | date: 'HH:mm' }}</small>
+          </div>
+          <div class="row-actions">
+            <button class="secondary" (click)="retry(item)" [disabled]="busy">Retry now</button>
+            <button (click)="showEligible(item)" [disabled]="busy">Choose driver…</button>
+          </div>
+        </article>
+        <p class="empty" *ngIf="!q.awaitingDriver?.length">Every parcel here has a driver.</p>
+
+        <h2 class="subheading">Assigned automatically</h2>
+        <article class="parcel-row" *ngFor="let item of q.assigned">
+          <div>
+            <b>{{ item.trackingNumber }}</b> <span class="chip" *ngIf="item.isTransfer">Transfer</span>
+            <p>{{ item.from }} → {{ item.to }} · {{ item.weight }} kg</p>
+            <ng-container *ngIf="item.assignment as a">
+              <small class="confirmed">{{ a.automatic ? 'Assigned automatically to' : 'Assigned by staff to' }} {{ a.driver?.name }} ({{ a.driver?.vehicleNumber }}) · trip {{ a.trip?.route }}</small>
+              <small *ngIf="a.status === 'ASSIGNED'" [class.alert]="remaining(a.acceptanceDeadline) === 'expired'">Acceptance expires in {{ remaining(a.acceptanceDeadline) }} ({{ a.acceptanceDeadline | date: 'HH:mm' }})</small>
+              <small *ngIf="a.status === 'ACCEPTED'" class="confirmed">Accepted {{ a.acceptedAt | date: 'HH:mm' }} · driver {{ a.trip?.current ? 'at/after ' + a.trip.current : '' }}</small>
+            </ng-container>
+          </div>
+          <div class="row-actions"><button class="secondary" (click)="cancelAssignment(item)" [disabled]="busy">Cancel &amp; reassign</button></div>
+        </article>
+        <p class="empty" *ngIf="!q.assigned?.length">No pending assignments.</p>
+
+        <h2 class="subheading">Declined or expired (last 24 h)</h2>
+        <article class="parcel-row compact" *ngFor="let f of q.assignmentFailures">
+          <div><b>{{ f.parcel?.trackingNumber }}</b><p>{{ f.driver?.name }} · {{ f.status | lowercase }} {{ f.at | date: 'HH:mm' }}<span *ngIf="f.reason"> · {{ f.reason }}</span></p></div>
+        </article>
+        <p class="empty" *ngIf="!q.assignmentFailures?.length">None.</p>
+      </section>
+
+      <!-- ARRIVALS AND VERIFICATION -->
+      <section class="panel" *ngIf="tab === 'arrivals'">
+        <div class="panel-heading">
+          <div><h2>Verify hand-overs</h2><p>Parcels dropped here by a driver (or on a vehicle standing here). Each parcel is recorded on its own; one problem never blocks the rest.</p></div>
+          <form class="receive-form" (ngSubmit)="receiveByReference()">
+            <label>Receive by tracking number or seal<input name="reference" [(ngModel)]="receiveReference" placeholder="e.g. SENDIT0575…"></label>
+            <button type="submit" [disabled]="busy || !receiveReference.trim()">Receive</button>
+          </form>
+        </div>
+        <article class="verify-group" *ngFor="let group of q.toVerify">
+          <header>
+            <div>
+              <b>{{ group.trip ? group.trip.driver?.name + ' · ' + group.trip.route : 'Driver hand-over' }}</b>
+              <small>{{ group.station }}<span *ngIf="group.trip"> · trip {{ group.trip.tripNumber }}</span><span *ngIf="group.trip?.status === 'CANCELLED'"> · driver could not finish the trip</span></small>
+            </div>
+            <label class="select-all"><input type="checkbox" [checked]="allSelected(group)" (change)="toggleAll(group, $any($event.target).checked)"> Select all</label>
+          </header>
+          <div class="verify-row" *ngFor="let p of group.parcels">
+            <label class="pick"><input type="checkbox" [(ngModel)]="verifySelections[p.id].selected"> <b>{{ p.trackingNumber }}</b></label>
+            <span class="muted">{{ p.weight }} kg · to {{ p.destination }}<span *ngIf="p.returned"> · handed back</span><span *ngIf="p.implicitDrop"> · still on vehicle</span></span>
+            <select [(ngModel)]="verifySelections[p.id].outcome">
+              <option value="VERIFIED">Verified (intact)</option>
+              <option value="MISSING">Missing</option>
+              <option value="DAMAGED">Damaged</option>
+              <option value="TAMPER_ALERT">Tamper alert</option>
+            </select>
+            <input [(ngModel)]="verifySelections[p.id].notes" placeholder="Notes (optional)">
+          </div>
+          <footer><button (click)="verifyGroup(group)" [disabled]="busy || !selectedIn(group).length">Record {{ selectedIn(group).length }} selected</button></footer>
+        </article>
+        <p class="empty" *ngIf="!q.toVerify?.length">Nothing is waiting for verification.</p>
+
+        <h2 class="subheading">Incoming</h2>
+        <article class="parcel-row" *ngFor="let group of q.incoming">
+          <div>
+            <b>{{ group.trip.driver?.name }} · {{ group.trip.route }}</b>
+            <p>{{ group.parcels.length }} parcel(s) to drop at {{ group.station }} · vehicle {{ group.trip.status === 'CREATED' ? 'preparing at ' + group.trip.start : (group.trip.atStop ? 'at ' : 'left ') + group.trip.current }}<span *ngIf="group.stopsAway > 0"> · {{ group.stopsAway }} stop(s) away</span></p>
+            <small class="muted">{{ trackingNumbers(group) }}</small>
+          </div>
+        </article>
+        <p class="empty" *ngIf="!q.incoming?.length">No vehicles are bringing parcels here right now.</p>
+      </section>
+
+      <!-- TRANSFERS -->
+      <section class="panel" *ngIf="tab === 'transfers'">
+        <div class="panel-heading"><div><h2>Parcels changing route here</h2><p>Verified transfer parcels wait in station custody; the connecting leg is assigned automatically.</p></div></div>
+        <article class="parcel-row" *ngFor="let p of q.transfers">
+          <div>
+            <b>{{ p.trackingNumber }}</b>
+            <p>{{ p.origin }} → {{ p.destination }} · {{ p.weight }} kg</p>
+            <small [class.alert]="p.nextLeg?.status === 'EXCEPTION'" [class.confirmed]="p.nextLeg?.status === 'DRIVER_ASSIGNED'">
+              Next: {{ p.nextLeg?.route }} to {{ p.nextLeg?.to }} · {{ p.nextLeg?.status === 'DRIVER_ASSIGNED' ? 'connecting driver assigned' : p.nextLeg?.status === 'EXCEPTION' ? 'route unavailable – re-plan' : 'waiting for a connecting driver' }}
+            </small>
+          </div>
+          <div class="row-actions">
+            <button class="secondary" *ngIf="p.nextLeg?.status === 'EXCEPTION'" (click)="replan(p)" [disabled]="busy">Re-plan</button>
+            <button class="secondary" (click)="correctWeight(p)" [disabled]="busy">Correct weight</button>
+          </div>
+        </article>
+        <p class="empty" *ngIf="!q.transfers?.length">No transfer parcels at this station.</p>
+      </section>
+
+      <!-- COLLECTION -->
+      <section class="panel" *ngIf="tab === 'collection'">
+        <div class="panel-heading"><div><h2>Place in locker</h2><p>A locker was reserved automatically. Put the parcel inside, then confirm; the recipient gets the code only after that.</p></div></div>
+        <article class="parcel-row" *ngFor="let p of q.lockerPlacement">
+          <div><b>{{ p.trackingNumber }}</b><p>Locker {{ p.locker?.compartmentNo }} · {{ p.weight }} kg · for {{ p.recipientName }}</p></div>
+          <div class="row-actions">
+            <button (click)="placed(p)" [disabled]="busy">Confirm placed</button>
+            <button class="secondary" (click)="handOver(p)" [disabled]="busy">Hand over instead</button>
+          </div>
+        </article>
+        <p class="empty" *ngIf="!q.lockerPlacement?.length">No lockers to fill.</p>
+
+        <h2 class="subheading">Ready for station collection</h2>
+        <article class="parcel-row" *ngFor="let p of q.readyForCollection">
+          <div><b>{{ p.trackingNumber }}</b><p>{{ p.recipientName }} · {{ p.recipientPhone }} · {{ p.weight }} kg</p><small class="muted">Collect within {{ remaining(p.collectionDeadlineAt) }} (by {{ p.collectionDeadlineAt | date: 'MMM d, HH:mm' }})</small></div>
+          <div class="row-actions">
+            <button (click)="handOver(p)" [disabled]="busy">Hand over (ID checked)</button>
+            <button class="secondary" (click)="putInLocker(p)" [disabled]="busy">Put in locker</button>
+          </div>
+        </article>
+        <p class="empty" *ngIf="!q.readyForCollection?.length">Nothing is waiting for collection.</p>
+
+        <h2 class="subheading">Overdue (past 12 hours, no free locker)</h2>
+        <article class="parcel-row" *ngFor="let p of q.overdue">
+          <div><b>{{ p.trackingNumber }}</b><p>{{ p.recipientName }} · {{ p.recipientPhone }}</p><small class="alert">Window ended {{ p.collectionDeadlineAt | date: 'MMM d, HH:mm' }} · keep in secure custody; a locker is retried automatically</small></div>
+          <div class="row-actions">
+            <button (click)="handOver(p)" [disabled]="busy">Hand over (ID checked)</button>
+            <button class="secondary" (click)="putInLocker(p)" [disabled]="busy">Try a locker now</button>
+          </div>
+        </article>
+        <p class="empty" *ngIf="!q.overdue?.length">No overdue parcels.</p>
+
+        <h2 class="subheading">In lockers</h2>
+        <article class="parcel-row compact" *ngFor="let p of q.inLocker">
+          <div><b>{{ p.trackingNumber }}</b><p>Locker {{ p.locker?.compartmentNo }} · {{ p.recipientName }}</p></div>
+          <div class="row-actions"><button class="secondary" (click)="collectWithCode(p)" [disabled]="busy">Assist collection with code</button></div>
+        </article>
+        <p class="empty" *ngIf="!q.inLocker?.length">No parcels in lockers.</p>
+      </section>
+
+      <!-- EXCEPTIONS -->
+      <section class="panel" *ngIf="tab === 'exceptions'">
+        <div class="panel-heading"><div><h2>Exceptions</h2><p>Held parcels do not continue until an exception is resolved. Resolving with "Continue" resumes the journey from this station.</p></div></div>
+        <article class="parcel-row" *ngFor="let alert of q.exceptions">
+          <div>
+            <b>{{ alertLabel(alert.type) }} · {{ alert.parcel?.trackingNumber }}</b>
+            <p>{{ alert.details }}</p>
+            <small class="muted">{{ alert.station || 'Network' }} · {{ alert.createdAt | date: 'MMM d, HH:mm' }} · {{ alert.status === 'UNDER_INVESTIGATION' ? 'under investigation' : 'open' }}</small>
+          </div>
+          <div class="row-actions">
+            <button class="secondary" *ngIf="alert.status === 'OPEN'" (click)="investigate(alert)" [disabled]="busy">Investigating</button>
+            <button (click)="startResolve(alert, 'CONTINUE')" [disabled]="busy">{{ alert.type === 'PARCEL_MISSING' ? 'Found – continue' : alert.type === 'UNEXPECTED_PARCEL' ? 'Take into custody' : 'Resolve' }}</button>
+            <button class="secondary" *ngIf="alert.type === 'ROUTE_UNAVAILABLE'" (click)="startResolve(alert, 'REPLAN')" [disabled]="busy">Re-plan</button>
+            <button class="secondary" *ngIf="['PARCEL_MISSING', 'PARCEL_DAMAGED', 'SEAL_BROKEN', 'QR_MISMATCH'].includes(alert.type)" (click)="startResolve(alert, 'CANCEL_PARCEL')" [disabled]="busy">Close &amp; cancel parcel</button>
+          </div>
+        </article>
+        <p class="empty" *ngIf="!q.exceptions?.length">No open exceptions.</p>
+        <h2 class="subheading" *ngIf="q.legExceptions?.length">Journeys needing a new route</h2>
+        <article class="parcel-row" *ngFor="let p of q.legExceptions">
+          <div><b>{{ p.trackingNumber }}</b><p>Blocked leg {{ p.from }} → {{ p.to }}</p></div>
+          <div class="row-actions">
+            <button (click)="replan(p)" [disabled]="busy || p.custody !== 'STATION'">Re-plan</button>
+            <button class="secondary" (click)="cancelParcel(p)" [disabled]="busy || p.custody !== 'STATION'">Cancel parcel</button>
+          </div>
+        </article>
+      </section>
+
+      <!-- FLEET -->
+      <section class="panel" *ngIf="tab === 'fleet'">
+        <div class="panel-heading"><div><h2>Drivers with open trips through {{ isAdmin && !stationId ? 'the network' : 'this station' }}</h2></div></div>
+        <div class="driver-grid">
+          <article *ngFor="let d of q.drivers">
+            <b>{{ d.driver?.name }}</b>
+            <p>{{ d.route }} · {{ d.start }} → {{ d.end }}</p>
+            <small>{{ d.status === 'CREATED' ? 'Preparing at ' + d.start : (d.atStop ? 'At ' : 'Left ') + d.current }}</small>
+            <div class="mini-bar"><span [style.width.%]="d.capacity.capacityKg ? (d.capacity.loadedKg + d.capacity.reservedKg) / d.capacity.capacityKg * 100 : 0"></span></div>
+            <small>{{ d.capacity.availableKg | number: '1.0-0' }} kg free of {{ d.capacity.capacityKg | number: '1.0-0' }} kg · {{ d.driver?.vehicleNumber }}</small>
+          </article>
+        </div>
+        <p class="empty" *ngIf="!q.drivers?.length">No drivers have open trips through here.</p>
+      </section>
+    </ng-container>
+
+    <!-- Manual assignment dialog -->
+    <div class="overlay" *ngIf="eligible" (click)="eligible = null">
+      <section class="dialog" (click)="$event.stopPropagation()">
+        <h2>Choose a driver for {{ eligible.leg.trackingNumber }}</h2>
+        <p class="muted">{{ eligible.leg.from }} → {{ eligible.leg.to }} · {{ eligible.leg.weight }} kg. The same route, direction, capacity and pickup rules apply; the driver still has 3 hours to accept.</p>
+        <p class="empty" *ngIf="!eligible.drivers.length">Loading open trips…</p>
+        <div class="driver-option" *ngFor="let d of eligible.drivers" [class.blocked]="!d.eligible && d.reason !== 'DECLINED'">
+          <div><b>{{ d.driverName }}</b><small>{{ d.tripStatus === 'CREATED' ? 'Preparing' : 'On the road' }} · {{ d.availableKg | number: '1.0-0' }} kg free<span *ngIf="d.distanceKm !== null"> · ~{{ d.distanceKm }} km away</span></small><small class="alert" *ngIf="!d.eligible">{{ reasonLabel(d.reason) }}</small></div>
+          <button (click)="assignManually(d)" [disabled]="busy || (!d.eligible && d.reason !== 'DECLINED')">{{ d.rank === 1 ? 'Assign (best match)' : 'Assign' }}</button>
+        </div>
+        <footer><button class="secondary" (click)="eligible = null">Close</button></footer>
+      </section>
+    </div>
+
+    <!-- Resolve exception dialog -->
+    <div class="overlay" *ngIf="resolving" (click)="resolving = null">
+      <section class="dialog" (click)="$event.stopPropagation()">
+        <h2>{{ resolving.action === 'CANCEL_PARCEL' ? 'Close and cancel the parcel' : resolving.action === 'REPLAN' ? 'Re-plan the journey' : 'Resolve and continue' }}</h2>
+        <p class="muted">{{ alertLabel(resolving.alert.type) }} · {{ resolving.alert.parcel?.trackingNumber }}</p>
+        <label>Outcome (recorded in the audit trail)<textarea rows="3" [(ngModel)]="resolving.outcome" placeholder="What was found and done"></textarea></label>
+        <footer>
+          <button class="secondary" (click)="resolving = null">Cancel</button>
+          <button (click)="confirmResolve()" [disabled]="busy || resolving.outcome.trim().length < 5">Confirm</button>
+        </footer>
+      </section>
+    </div>
+
+    <!-- Re-plan dialog -->
+    <div class="overlay" *ngIf="replanning" (click)="replanning = null">
+      <section class="dialog" (click)="$event.stopPropagation()">
+        <h2>Re-plan {{ replanning.parcel.trackingNumber }}</h2>
+        <p class="muted">The remaining journey is planned again from {{ replanning.parcel.station || 'the station holding it' }}. Open driver offers are withdrawn and a new driver is assigned automatically.</p>
+        <label *ngIf="isAdmin">Destination
+          <select [(ngModel)]="replanning.destinationTransitPointId">
+            <option *ngFor="let p of points" [value]="p.id">{{ p.name }}{{ p.id === replanning.parcel.destinationTransitPointId ? ' (current)' : '' }}</option>
+          </select>
+        </label>
+        <label>Reason (recorded in the audit trail)<textarea rows="3" [(ngModel)]="replanning.reason" placeholder="Why the journey is changing"></textarea></label>
+        <footer>
+          <button class="secondary" (click)="replanning = null">Cancel</button>
+          <button (click)="confirmReplan()" [disabled]="busy || replanning.reason.trim().length < 5">Re-plan</button>
+        </footer>
+      </section>
+    </div>
   </main>
 </div>

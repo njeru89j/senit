@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import {
   DashboardStatsDto,
@@ -27,6 +27,10 @@ import {
 import { UserResponseDto } from '../users/dto';
 import { ParcelResponseDto } from '../parcels/dto';
 import { MailerService } from '../mailer/mailer.service';
+import { OperationsService } from '../operations/operations.service';
+import { JourneyService } from '../operations/workflow/journey.service';
+import { DispatchService } from '../operations/workflow/dispatch.service';
+import { PARCEL_STATUS_GROUPS } from '../common/parcel-lifecycle';
 
 interface ParcelWithRelations {
   id: string;
@@ -88,7 +92,31 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailerService: MailerService,
+    private readonly operations: OperationsService,
+    private readonly journey: JourneyService,
+    private readonly dispatch: DispatchService,
   ) {}
+
+  /**
+   * Exception control: offer a parcel's current leg to a specific driver's open trip. The same route,
+   * direction, capacity and pickup rules as automatic assignment apply.
+   */
+  private async assignCurrentLegToDriver(parcelId: string, driverId: string, actor?: AdminActor) {
+    const leg = await this.prisma.parcelLeg.findFirst({ where: { parcelId, status: { in: ['AWAITING_DRIVER', 'DRIVER_ASSIGNED'] } }, orderBy: { sequence: 'asc' } });
+    if (!leg) throw new BadRequestException('This parcel has no leg waiting for a driver. Confirm it at the origin station first, or wait until it is received at its transfer station.');
+    const trip = await this.prisma.trip.findFirst({ where: { driverId, status: { in: ['CREATED', 'IN_TRANSIT'] } } });
+    if (!trip) throw new BadRequestException('That driver has no open trip. Drivers receive work on a trip they have opened.');
+    if (leg.status === 'DRIVER_ASSIGNED') {
+      const offer = await this.prisma.parcelAssignment.findFirst({ where: { legId: leg.id, status: { in: ['ASSIGNED', 'ACCEPTED'] } } });
+      if (offer?.driverId === driverId) return;
+      if (offer) await this.dispatch.cancelByStaff(offer.id, this.operationsActor(actor), 'Reassigned to another driver by staff', { autoReassign: false });
+    }
+    await this.dispatch.manualAssign(leg.id, trip.id, this.operationsActor(actor));
+  }
+
+  private operationsActor(actor?: AdminActor) {
+    return { id: actor?.id ?? 'system', role: (actor?.role ?? 'ADMIN') as UserRole };
+  }
 
   private async getTransitOfficerParcelScope(
     officerId: string,
@@ -108,22 +136,17 @@ export class AdminService {
       select: { id: true, name: true, routeId: true },
     });
     const pointIds = points.map((point) => point.id);
-    const pointNames = points.map((point) => point.name).filter(Boolean);
-    const memberships = pointIds.length
-      ? await this.prisma.routeTransitPoint.findMany({ where: { transitPointId: { in: pointIds } }, select: { routeId: true } })
-      : [];
-    const routeIds = [...new Set([...points.map((point) => point.routeId), ...memberships.map((membership) => membership.routeId)].filter((id): id is string => !!id))];
-
-    if (!pointIds.length && !pointNames.length && !routeIds.length) {
+    if (!pointIds.length) {
       return { id: { in: [] } };
     }
 
+    // Parcels at, from, to, or with a journey leg touching the officer's stations.
     return {
       OR: [
-        ...(pointIds.length ? [{ currentTransitPointId: { in: pointIds } }] : []),
-        ...(pointNames.length ? [{ currentLocation: { in: pointNames } }] : []),
-        ...(pointNames.length ? [{ deliveryAddress: { in: pointNames, mode: 'insensitive' as const } }] : []),
-        ...(routeIds.length ? [{ routeId: { in: routeIds } }] : []),
+        { currentTransitPointId: { in: pointIds } },
+        { originTransitPointId: { in: pointIds } },
+        { destinationTransitPointId: { in: pointIds } },
+        { legs: { some: { OR: [{ fromTransitPointId: { in: pointIds } }, { toTransitPointId: { in: pointIds } }] } } },
       ],
     };
   }
@@ -146,13 +169,14 @@ export class AdminService {
   // Dashboard and Statistics
   async getDashboardStats(actor?: AdminActor): Promise<DashboardStatsDto> {
     const parcelScope = await this.applyTransitOfficerParcelScope({ deletedAt: null }, actor);
-    const pendingScope = await this.applyTransitOfficerParcelScope({ status: 'pending', deletedAt: null }, actor);
+    const pendingScope = await this.applyTransitOfficerParcelScope({ status: { in: PARCEL_STATUS_GROUPS.awaitingStart }, deletedAt: null }, actor);
+    // "In progress" covers everything between custody and hand-over: moving, held at a transfer station, or awaiting collection.
     const inTransitScope = await this.applyTransitOfficerParcelScope({
-      status: { in: ['assigned', 'picked_up', 'in_transit', 'delivered_to_recipient'] },
+      status: { in: [...PARCEL_STATUS_GROUPS.inTransit, ...PARCEL_STATUS_GROUPS.awaitingCollection] },
       deletedAt: null,
     }, actor);
-    const deliveredScope = await this.applyTransitOfficerParcelScope({ status: 'delivered', deletedAt: null }, actor);
-    const cancelledScope = await this.applyTransitOfficerParcelScope({ status: 'cancelled', deletedAt: null }, actor);
+    const deliveredScope = await this.applyTransitOfficerParcelScope({ status: { in: PARCEL_STATUS_GROUPS.finished }, deletedAt: null }, actor);
+    const cancelledScope = await this.applyTransitOfficerParcelScope({ status: { in: PARCEL_STATUS_GROUPS.closed }, deletedAt: null }, actor);
 
     const [
       totalUsers,
@@ -229,12 +253,12 @@ export class AdminService {
 
   async getSystemStats(actor?: AdminActor): Promise<SystemStatsDto> {
     const completedParcelScope = await this.applyTransitOfficerParcelScope({
-      status: { in: ['delivered', 'completed', 'delivered_to_recipient'] },
+      status: { in: ['delivered', 'completed'] },
       deletedAt: null,
       deliveryFee: { not: null, gt: 0 },
     }, actor);
     const monthlyCompletedParcelScope = await this.applyTransitOfficerParcelScope({
-      status: { in: ['delivered', 'completed', 'delivered_to_recipient'] },
+      status: { in: ['delivered', 'completed'] },
       deletedAt: null,
       deliveryFee: { not: null, gt: 0 },
       actualDeliveryTime: {
@@ -242,7 +266,7 @@ export class AdminService {
       },
     }, actor);
     const deliveryTimeScope = await this.applyTransitOfficerParcelScope({
-      status: { in: ['delivered', 'completed', 'delivered_to_recipient'] },
+      status: { in: ['delivered', 'completed'] },
       deletedAt: null,
       totalDeliveryTime: { not: null },
     }, actor);
@@ -453,9 +477,9 @@ export class AdminService {
       const totalDeliveries = deliveryStats.reduce((sum, stat) => sum + stat._count.id, 0);
       const deliveredCount = deliveryStats.find(stat => stat.status === 'delivered')?._count.id || 0;
       const inTransitCount = deliveryStats
-        .filter(stat => ['assigned', 'picked_up', 'in_transit', 'delivered_to_recipient'].includes(stat.status))
+        .filter(stat => (PARCEL_STATUS_GROUPS.inTransit as string[]).includes(stat.status))
         .reduce((sum, stat) => sum + stat._count.id, 0);
-      const pendingCount = deliveryStats.find(stat => stat.status === 'pending')?._count.id || 0;
+      const pendingCount = deliveryStats.filter(stat => (PARCEL_STATUS_GROUPS.awaitingStart as string[]).includes(stat.status)).reduce((sum, stat) => sum + stat._count.id, 0);
 
       // Get current month revenue for daily breakdown
       const currentMonthRevenue = await this.prisma.parcel.aggregate({
@@ -613,6 +637,7 @@ export class AdminService {
       search,
       role,
       isActive,
+      routeId,
     } = query;
 
     const skip = (page - 1) * limit;
@@ -639,6 +664,19 @@ export class AdminService {
       where.isActive = isActive;
     }
 
+    // Filter by route: drivers who serve it, plus the officers of the stations it stops at.
+    if (routeId) {
+      const stops = await this.prisma.routeTransitPoint.findMany({ where: { routeId }, select: { transitPointId: true } });
+      const stationIds = stops.map((stop) => stop.transitPointId);
+      const officers = stationIds.length
+        ? await this.prisma.transitPointOfficer.findMany({ where: { transitPointId: { in: stationIds } }, select: { officerId: true } })
+        : [];
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        { OR: [{ driverProfile: { routesServed: { has: routeId } } }, { id: { in: officers.map((item) => item.officerId) } }] },
+      ];
+    }
+
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
@@ -663,11 +701,48 @@ export class AdminService {
     ]);
 
     return {
-      users: users.map((user) => this.mapToUserResponse(user)),
+      users: await this.withRouteContext(users),
       total,
       page,
       limit,
     };
+  }
+
+  /**
+   * Adds the routes each member of staff works: the routes a driver serves, and for an officer the
+   * station they run plus the routes stopping there. Customers come back unchanged.
+   */
+  private async withRouteContext(users: Array<{ id: string; role: UserRole; driverProfile?: { routesServed: string[] } | null }>): Promise<UserResponseDto[]> {
+    const driverRouteIds = users.flatMap((user) => user.driverProfile?.routesServed ?? []);
+    const officerIds = users.filter((user) => user.role === UserRole.TRANSIT_OFFICER).map((user) => user.id);
+    const nominations = officerIds.length
+      ? await this.prisma.transitPointOfficer.findMany({ where: { officerId: { in: officerIds } }, select: { officerId: true, transitPointId: true } })
+      : [];
+    const stationIds = nominations.map((item) => item.transitPointId);
+    const stations: Array<{ id: string; name: string }> = stationIds.length
+      ? await this.prisma.transitPoint.findMany({ where: { id: { in: stationIds } }, select: { id: true, name: true } })
+      : [];
+    const memberships: Array<{ routeId: string; transitPointId: string }> = stationIds.length
+      ? await this.prisma.routeTransitPoint.findMany({ where: { transitPointId: { in: stationIds } }, select: { routeId: true, transitPointId: true } })
+      : [];
+    const routeIds = [...new Set([...driverRouteIds, ...memberships.map((item) => item.routeId)])];
+    const routes = routeIds.length ? await this.prisma.route.findMany({ where: { id: { in: routeIds } }, select: { id: true, name: true } }) : [];
+    const routeName = (id: string) => routes.find((route) => route.id === id)?.name ?? id;
+
+    return users.map((user) => {
+      const mapped = this.mapToUserResponse(user as never);
+      if (user.role === UserRole.DRIVER) {
+        const ids = user.driverProfile?.routesServed ?? [];
+        return { ...mapped, routes: ids.map((id) => ({ id, name: routeName(id) })) };
+      }
+      if (user.role === UserRole.TRANSIT_OFFICER) {
+        const stationId = nominations.find((item) => item.officerId === user.id)?.transitPointId;
+        const station = stations.find((item) => item.id === stationId);
+        const ids = [...new Set(memberships.filter((item) => item.transitPointId === stationId).map((item) => item.routeId))];
+        return { ...mapped, station: station ? { id: station.id, name: station.name } : null, routes: ids.map((id) => ({ id, name: routeName(id) })) };
+      }
+      return mapped;
+    });
   }
 
   async getAllUsersForDropdown(): Promise<{
@@ -997,15 +1072,9 @@ export class AdminService {
     console.log(`  Direct Reviews:`, directDriverReviews.map(r => ({ rating: r.rating, parcelId: r.parcelId, type: r.reviewType })));
 
     // Calculate additional statistics
-    const completedParcels = assignedParcels.filter(p => 
-      p.status === 'delivered' || 
-      p.status === 'completed' || 
-      p.status === 'delivered_to_recipient'
-    );
-    const inTransitParcels = assignedParcels.filter(p => 
-      ['assigned', 'picked_up', 'in_transit', 'delivered_to_recipient'].includes(p.status)
-    );
-    const pendingParcels = assignedParcels.filter(p => p.status === 'pending' || p.status === 'assigned');
+    const completedParcels = assignedParcels.filter(p => p.status === 'delivered' || p.status === 'completed');
+    const inTransitParcels = assignedParcels.filter(p => p.status === 'collected' || p.status === 'in_transit');
+    const pendingParcels = assignedParcels.filter(p => (PARCEL_STATUS_GROUPS.awaitingStart as string[]).includes(p.status));
     
     // Calculate monthly earnings (last 30 days)
     const thirtyDaysAgo = new Date();
@@ -1082,9 +1151,7 @@ export class AdminService {
       timeAccuracy: Math.round(timeAccuracy * 10) / 10,
       estimatedTime: Math.round(avgEstimatedTime),
       actualTime: Math.round(avgActualTime),
-      currentAssignments: assignedParcels.filter(p => 
-        ['assigned', 'picked_up', 'in_transit'].includes(p.status)
-      ).length,
+      currentAssignments: await this.prisma.parcelAssignment.count({ where: { driverId, status: { in: ['ASSIGNED', 'ACCEPTED', 'COLLECTED'] } } }),
       isAvailable: driver?.isAvailable || false,
       isActive: driver?.isActive || false,
       parcelStats: {
@@ -1147,6 +1214,8 @@ export class AdminService {
           licenseNumber: details.licenseNumber,
           vehicleType: details.vehicleType,
           vehicleNumber: details.vehicleNumber || null,
+          maxLoadKg: details.vehicleType === 'MOTORCYCLE' ? 15 : details.maxLoadKg ?? null,
+          maxDistanceKm: details.vehicleType === 'MOTORCYCLE' ? 80 : details.maxDistanceKm ?? null,
           driverApplicationStatus: 'APPROVED',
           driverApprovalDate: new Date(),
           driverApprovedBy: adminId,
@@ -1190,6 +1259,8 @@ export class AdminService {
           licenseNumber: details.licenseNumber,
           vehicleType: details.vehicleType,
           vehicleNumber: details.vehicleNumber || null,
+          maxLoadKg: details.vehicleType === 'MOTORCYCLE' ? 15 : details.maxLoadKg ?? null,
+          maxDistanceKm: details.vehicleType === 'MOTORCYCLE' ? 80 : details.maxDistanceKm ?? null,
           driverApplicationStatus: 'APPROVED',
           driverApprovalDate: new Date(),
           driverApprovedBy: adminId,
@@ -1405,12 +1476,7 @@ export class AdminService {
     }
 
     if (hasAssignedParcels) {
-      where.assignedParcels = {
-        some: {
-          status: { in: ['assigned', 'picked_up', 'in_transit', 'delivered_to_recipient'] },
-          deletedAt: null,
-        },
-      };
+      where.id = { in: (await this.prisma.parcelAssignment.findMany({ where: { status: { in: ['ASSIGNED', 'ACCEPTED', 'COLLECTED'] } }, select: { driverId: true }, distinct: ['driverId'] })).map((item) => item.driverId) };
     }
 
     const [drivers, total] = await Promise.all([
@@ -1804,161 +1870,25 @@ export class AdminService {
     actor?: AdminActor,
   ): Promise<ParcelResponseDto> {
     const { action, newDriverId } = managementDto;
-
-    const parcel = await this.prisma.parcel.findFirst({
-      where: await this.applyTransitOfficerParcelScope({
-        id: parcelId,
-        deletedAt: null,
-      }, actor),
-    });
-
-    if (!parcel) {
-      throw new NotFoundException('Parcel not found');
-    }
-
-    let updateData: Prisma.ParcelUpdateInput = {};
+    const parcel = await this.prisma.parcel.findFirst({ where: await this.applyTransitOfficerParcelScope({ id: parcelId, deletedAt: null }, actor) });
+    if (!parcel) throw new NotFoundException('Parcel not found');
 
     switch (action) {
       case 'cancel':
-        updateData = { status: 'cancelled' };
+        await this.journey.cancelParcel(parcelId, this.operationsActor(actor), 'Cancelled by staff');
         break;
-      case 'reassign': {
-        if (!newDriverId) {
-          throw new BadRequestException(
-            'New driver ID is required for reassignment',
-          );
-        }
-        // Verify new driver exists and is available
-        const newDriver = await this.prisma.user.findFirst({
-          where: {
-            id: newDriverId,
-            role: 'DRIVER',
-            isActive: true,
-            deletedAt: null,
-          },
-        });
-        if (!newDriver) {
-          throw new BadRequestException(
-            'New driver not found or not available',
-          );
-        }
-        const newDriverProfile = await this.prisma.driverProfile.findUnique({
-          where: { userId: newDriverId },
-          select: { routesServed: true, currentRouteId: true },
-        });
-        if (parcel.routeId) {
-          const servesParcelRoute =
-            newDriverProfile?.currentRouteId === parcel.routeId ||
-            newDriverProfile?.routesServed?.includes(parcel.routeId);
-
-          if (!servesParcelRoute) {
-            throw new BadRequestException('Driver is not on this parcel route today');
-          }
-        }
-        updateData = {
-          driver: { connect: { id: newDriverId } },
-          assignedAt: new Date(),
-          status: 'assigned', // Status remains 'assigned' until driver starts journey
-        };
+      case 'reassign':
+        if (!newDriverId) throw new BadRequestException('New driver ID is required for reassignment');
+        await this.assignCurrentLegToDriver(parcelId, newDriverId, actor);
         break;
-      }
-
       default:
         throw new BadRequestException('Invalid action');
     }
 
-    const updatedParcel = await this.prisma.parcel.update({
+    const updatedParcel = await this.prisma.parcel.findUniqueOrThrow({
       where: { id: parcelId },
-      data: updateData,
-      include: {
-        sender: true,
-        recipient: true,
-        driver: true,
-        statusHistory: true,
-        reviews: true,
-        deliveryProof: true,
-      },
+      include: { sender: true, recipient: true, driver: true, statusHistory: true, reviews: true, deliveryProof: true },
     });
-
-    // Create status history entry for reassignment
-    if (action === 'reassign') {
-      await this.prisma.parcelStatusHistory.create({
-        data: {
-          parcelId,
-          status: 'assigned',
-          location: 'Driver reassigned - Pending pickup',
-          updatedBy: newDriverId,
-          notes: `Parcel reassigned to new driver. Status: Pending driver to start journey.`,
-        },
-      });
-
-      // Send driver assignment email to the new driver
-      try {
-        await this.mailerService.sendDriverAssignment({
-          to: updatedParcel.driver?.email || '',
-          name: updatedParcel.driver?.name || '',
-          profilePicture: updatedParcel.driver?.profilePicture || undefined,
-          parcelId: updatedParcel.id,
-          trackingNumber: updatedParcel.trackingNumber,
-          pickupAddress: updatedParcel.pickupAddress,
-          deliveryAddress: updatedParcel.deliveryAddress,
-          estimatedDelivery:
-            updatedParcel.estimatedDeliveryTime?.toISOString() ||
-            'To be determined',
-        });
-        this.logger.log(
-          `Driver reassignment email sent to driver: ${updatedParcel.driver?.email}`,
-        );
-      } catch (emailError) {
-        this.logger.warn(
-          `Failed to send driver reassignment email to driver ${updatedParcel.driver?.email}:`,
-          emailError,
-        );
-      }
-
-      // Send notification email to sender about reassignment
-      try {
-        await this.mailerService.sendParcelStatusUpdate({
-          to: updatedParcel.senderEmail,
-          name: updatedParcel.senderName,
-          profilePicture: updatedParcel.sender?.profilePicture || undefined,
-          parcelId: updatedParcel.id,
-          status: 'assigned',
-          trackingNumber: updatedParcel.trackingNumber,
-          estimatedDelivery: updatedParcel.estimatedDeliveryTime?.toISOString(),
-        });
-        this.logger.log(
-          `Reassignment notification email sent to sender: ${updatedParcel.senderEmail}`,
-        );
-      } catch (emailError) {
-        this.logger.warn(
-          `Failed to send reassignment notification email to sender ${updatedParcel.senderEmail}:`,
-          emailError,
-        );
-      }
-
-      // Send notification email to recipient about reassignment
-      try {
-        await this.mailerService.sendParcelStatusUpdate({
-          to: updatedParcel.recipientEmail,
-          name: updatedParcel.recipientName,
-          profilePicture: updatedParcel.recipient?.profilePicture || undefined,
-          parcelId: updatedParcel.id,
-          status: 'assigned',
-          trackingNumber: updatedParcel.trackingNumber,
-          estimatedDelivery: updatedParcel.estimatedDeliveryTime?.toISOString(),
-        });
-        this.logger.log(
-          `Reassignment notification email sent to recipient: ${updatedParcel.recipientEmail}`,
-        );
-      } catch (emailError) {
-        this.logger.warn(
-          `Failed to send reassignment notification email to recipient ${updatedParcel.recipientEmail}:`,
-          emailError,
-        );
-      }
-    }
-
     return this.mapToParcelResponse(updatedParcel as ParcelWithRelations);
   }
 
@@ -1973,8 +1903,7 @@ export class AdminService {
     const parcel = await this.prisma.parcel.findFirst({
       where: await this.applyTransitOfficerParcelScope({
         id: parcelId,
-        status: { in: ['created', 'pending', 'awaiting_driver_assignment'] },
-        driverId: null,
+        status: { in: ['at_origin_transit_point', 'at_transit_point'] },
         deletedAt: null,
       }, actor),
     });
@@ -2007,117 +1936,15 @@ export class AdminService {
       throw new NotFoundException('Driver not found or not available');
     }
 
-    const driverProfile = await this.prisma.driverProfile.findUnique({
-      where: { userId: driverId },
-      select: { routesServed: true, currentRouteId: true },
-    });
-    if (parcel.routeId) {
-      const servesParcelRoute =
-        driverProfile?.currentRouteId === parcel.routeId ||
-        driverProfile?.routesServed?.includes(parcel.routeId);
-
-      if (!servesParcelRoute) {
-        throw new BadRequestException('Driver is not on this parcel route today');
-      }
+    if (parcel.status === 'awaiting_confirmation') {
+      throw new BadRequestException('Confirm the parcel was received at its origin station before assigning a driver');
     }
-
-    this.logger.log(`Debug - Driver data for assignment: name="${driver.name}", profilePicture="${driver.profilePicture}"`);
-
-    // Assign parcel to driver
+    await this.assignCurrentLegToDriver(parcelId, driverId, actor);
     const updatedParcel = await this.prisma.parcel.update({
       where: { id: parcelId },
-      data: {
-        driverId,
-        assignedAt: new Date(),
-        status: 'assigned', // Status remains 'assigned' until driver starts journey
-        notes: assignmentNotes,
-      },
-      include: {
-        sender: true,
-        recipient: true,
-        driver: true,
-      },
+      data: assignmentNotes ? { notes: assignmentNotes } : {},
+      include: { sender: true, recipient: true, driver: true },
     });
-
-    // Create status history entry for assignment
-    await this.prisma.parcelStatusHistory.create({
-      data: {
-        parcelId,
-        status: 'assigned',
-        location: 'Driver assigned - Pending pickup',
-        updatedBy: driverId,
-        notes: `Parcel assigned to driver ${driver.name}. Status: Pending driver to start journey.${assignmentNotes ? ` Notes: ${assignmentNotes}` : ''}`,
-      },
-    });
-
-    // Send driver assignment email to driver
-    try {
-      await this.mailerService.sendDriverAssignment({
-        to: driver.email,
-        name: driver.name,
-        profilePicture: driver.profilePicture || undefined,
-        parcelId: updatedParcel.id,
-        trackingNumber: updatedParcel.trackingNumber,
-        pickupAddress: updatedParcel.pickupAddress,
-        deliveryAddress: updatedParcel.deliveryAddress,
-        estimatedDelivery:
-          updatedParcel.estimatedDeliveryTime?.toISOString() ||
-          'To be determined',
-      });
-      this.logger.log(
-        `Driver assignment email sent to driver: ${driver.email}`,
-      );
-    } catch (emailError) {
-      this.logger.warn(
-        `Failed to send driver assignment email to driver ${driver.email}:`,
-        emailError,
-      );
-    }
-
-    // Send notification email to sender
-    try {
-      this.logger.log(`Debug - Sender data for assignment: name="${updatedParcel.senderName}", profilePicture="${updatedParcel.sender?.profilePicture}"`);
-      await this.mailerService.sendParcelStatusUpdate({
-        to: updatedParcel.senderEmail,
-        name: updatedParcel.senderName,
-        profilePicture: updatedParcel.sender?.profilePicture || undefined,
-        parcelId: updatedParcel.id,
-        status: 'assigned',
-        trackingNumber: updatedParcel.trackingNumber,
-        estimatedDelivery: updatedParcel.estimatedDeliveryTime?.toISOString(),
-      });
-      this.logger.log(
-        `Assignment notification email sent to sender: ${updatedParcel.senderEmail}`,
-      );
-    } catch (emailError) {
-      this.logger.warn(
-        `Failed to send assignment notification email to sender ${updatedParcel.senderEmail}:`,
-        emailError,
-      );
-    }
-
-    // Send notification email to recipient
-    try {
-      this.logger.log(`Debug - Recipient data for assignment: name="${updatedParcel.recipientName}", profilePicture="${updatedParcel.recipient?.profilePicture}"`);
-      await this.mailerService.sendParcelStatusUpdate({
-        to: updatedParcel.recipientEmail,
-        name: updatedParcel.recipientName,
-        profilePicture: updatedParcel.recipient?.profilePicture || undefined,
-        parcelId: updatedParcel.id,
-        status: 'assigned',
-        trackingNumber: updatedParcel.trackingNumber,
-        estimatedDelivery: updatedParcel.estimatedDeliveryTime?.toISOString(),
-      });
-      this.logger.log(
-        `Assignment notification email sent to recipient: ${updatedParcel.recipientEmail}`,
-      );
-    } catch (emailError) {
-      this.logger.warn(
-        `Failed to send assignment notification email to recipient ${updatedParcel.recipientEmail}:`,
-        emailError,
-      );
-    }
-
     return this.mapToParcelResponse(updatedParcel);
   }
 

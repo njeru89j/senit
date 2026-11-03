@@ -65,6 +65,9 @@ export const createParcelSchema = Joi.object({
     'number.max': 'Weight cannot exceed 1000 kg',
     'any.required': 'Weight is required',
   }),
+  category: Joi.string().valid('DURABLE', 'FRAGILE', 'ELECTRONICS', 'DOCUMENTS', 'CLOTHING', 'PERISHABLE', 'OTHER').optional().messages({
+    'any.only': 'Choose a valid parcel category',
+  }),
   description: Joi.string().max(500).optional().messages({
     'string.max': 'Description cannot exceed 500 characters',
   }),

@@ -6,11 +6,12 @@ import { NavbarComponent } from './components/shared/navbar/navbar';
 import { Footer } from './components/shared/footer/footer';
 import { Toast } from './components/shared/toast/toast';
 import { ScrollToTopComponent } from './components/shared/scroll-to-top/scroll-to-top';
+import { SupportChatComponent } from './components/shared/support-chat/support-chat';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, CommonModule, NavbarComponent, Footer, Toast, ScrollToTopComponent],
+  imports: [RouterOutlet, CommonModule, NavbarComponent, Footer, Toast, ScrollToTopComponent, SupportChatComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })

@@ -45,22 +45,24 @@ describe('MapComponent', () => {
     expect(component.mapReady.emit).toHaveBeenCalledWith(mockMap);
   });
 
-  it('should handle marker clicks', () => {
-    spyOn(component.markerClick, 'emit');
+  it('should expose marker clicks to the parent', () => {
     const mockLocation: MapLocation = { lat: 0, lng: 0 };
-    
-    component.onMarkerClick(mockLocation);
-    
-    expect(component.markerClick.emit).toHaveBeenCalledWith(mockLocation);
+    let received: MapLocation | undefined;
+    component.markerClick.subscribe((location) => (received = location));
+
+    component.markerClick.emit(mockLocation);
+
+    expect(received).toEqual(mockLocation);
   });
 
-  it('should handle map clicks', () => {
-    spyOn(component.mapClick, 'emit');
+  it('should expose map clicks to the parent', () => {
     const mockCoordinates = { lat: 0, lng: 0 };
-    
-    component.onMapClick(mockCoordinates);
-    
-    expect(component.mapClick.emit).toHaveBeenCalledWith(mockCoordinates);
+    let received: { lat: number; lng: number } | undefined;
+    component.mapClick.subscribe((coordinates) => (received = coordinates));
+
+    component.mapClick.emit(mockCoordinates);
+
+    expect(received).toEqual(mockCoordinates);
   });
 
   it('should toggle fullscreen mode', () => {

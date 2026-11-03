@@ -1,4 +1,6 @@
-import { Component, OnInit, ViewChild } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Subscription } from 'rxjs';
+import { debounceTime, filter } from 'rxjs/operators';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule, ActivatedRoute, Router } from '@angular/router';
@@ -10,12 +12,17 @@ import { ToastService } from '../../../shared/toast/toast.service';
 import { SidebarComponent } from '../../../shared/sidebar/sidebar';
 import { ParcelsService } from '../../../../services/parcels.service';
 import { AuthService } from '../../../../services/auth.service';
+import { OperationsService } from '../../../../services/operations.service';
+import { RealtimeService } from '../../../../services/realtime.service';
+import { JourneyTimelineComponent } from '../../../shared/journey-timeline/journey-timeline';
 import * as L from 'leaflet';
+import { parcelStatusClass, parcelStatusLabel, inStatusGroup, PARCEL_STATUS_FILTERS } from '../../../../utils/parcel-status';
 
 interface ParcelDetailsData {
   id: string;
   trackingNumber: string;
   status: 'Pending' | 'In Transit' | 'Delivered' | 'Completed' | 'Cancelled';
+  statusLabel?: string;
   pickupDate: string;
   deliveryDate: string;
   weight: string;
@@ -51,16 +58,17 @@ interface ParcelDetailsData {
     time: string;
     icon: string;
     location?: string;
+    note?: string;
   }>;
 }
 
 @Component({
   selector: 'app-parcel-details',
-  imports: [CommonModule, FormsModule, RouterModule, MapComponent, SidebarComponent],
+  imports: [CommonModule, FormsModule, RouterModule, MapComponent, SidebarComponent, JourneyTimelineComponent],
   templateUrl: './parcel-details.html',
   styleUrl: './parcel-details.css'
 })
-export class ParcelDetails implements OnInit {
+export class ParcelDetails implements OnInit, OnDestroy {
   @ViewChild('mapComponent', { static: false }) mapComponent!: MapComponent;
   
   parcelId: string = '';
@@ -84,15 +92,82 @@ export class ParcelDetails implements OnInit {
     private mapService: MapService,
     private toastService: ToastService,
     private parcelsService: ParcelsService,
-    private http: HttpClient,
-    private authService: AuthService
+        private http: HttpClient,
+    private authService: AuthService,
+    private operationsService: OperationsService,
+    private realtime: RealtimeService,
   ) {}
+
+  private workflowSubscription?: Subscription;
+
+  actionBusy = false;
+  get isTransitOfficer() { return this.authService.getCurrentUser()?.role === 'TRANSIT_OFFICER'; }
+  get rawStatus(): string { return this.trackingOverview?.parcel?.status ?? ''; }
+  get closed() { return ['delivered', 'completed', 'cancelled', 'returned'].includes(this.rawStatus); }
+  get currentLeg(): any {
+    return (this.trackingOverview?.journey?.internal?.legs ?? []).find((leg: any) => !['COMPLETED', 'CANCELLED'].includes(leg.status)) ?? null;
+  }
+  activeOffer(leg: any) { return (leg.assignments ?? []).find((item: any) => item.status === 'ASSIGNED' || item.status === 'ACCEPTED') ?? null; }
+  carryingTrip(leg: any): string | null { return (leg.assignments ?? []).find((item: any) => item.status === 'COLLECTED')?.tripId ?? null; }
+  legStateLabel(status: string) {
+    const labels: Record<string, string> = { PLANNED: 'planned', AWAITING_DRIVER: 'waiting for a driver', DRIVER_ASSIGNED: 'driver assigned', IN_TRANSIT: 'in transit', AWAITING_VERIFICATION: 'awaiting station verification', EXCEPTION: 'exception' };
+    return labels[status] ?? status;
+  }
+  private staffAction(request: any, success: string) {
+    this.actionBusy = true;
+    request.subscribe({
+      next: (result: any) => { this.actionBusy = false; this.toastService.showSuccess(result?.message ?? success); this.loadParcelDetails(); },
+      error: (error: any) => { this.actionBusy = false; this.toastService.showError(error?.error?.message ?? 'The action could not be completed'); },
+    });
+  }
+  retryLeg(leg: any) { this.staffAction(this.operationsService.retryLeg(leg.id), 'Assignment retried.'); }
+  cancelOffer(offer: any) {
+    const reason = prompt(`Why cancel ${offer.driver?.name ?? 'the driver'}'s assignment?`);
+    if (reason?.trim()) this.staffAction(this.operationsService.cancelAssignment(offer.id, reason.trim()), 'Assignment cancelled and reassigned.');
+  }
+  custodyException(tripId: string) {
+    const reason = prompt('The driver cannot continue this trip. What happened?');
+    if (reason?.trim()) this.staffAction(this.operationsService.custodyException(tripId, reason.trim()), 'Trip stopped; parcels on board stay with the driver until a station receives them.');
+  }
+  confirmReceived() { this.staffAction(this.operationsService.confirmParcelReceived(this.trackingOverview.parcel.id), 'Parcel confirmed.'); }
+  /** Re-plan form; only an admin may also send the parcel to a different destination. */
+  replanning: { reason: string; destinationTransitPointId: string } | null = null;
+  stations: any[] = [];
+  startReplan() {
+    this.replanning = { reason: '', destinationTransitPointId: this.trackingOverview?.parcel?.destinationTransitPointId ?? '' };
+    if (!this.isTransitOfficer && !this.stations.length) {
+      this.operationsService.transitPoints().subscribe((points) => (this.stations = points.filter((point: any) => point.active !== false)));
+    }
+  }
+  replan() {
+    if (!this.replanning || this.replanning.reason.trim().length < 5) return;
+    const { reason, destinationTransitPointId } = this.replanning;
+    const changed = !this.isTransitOfficer && destinationTransitPointId && destinationTransitPointId !== this.trackingOverview.parcel.destinationTransitPointId;
+    this.replanning = null;
+    this.staffAction(this.operationsService.replan(this.trackingOverview.parcel.id, reason.trim(), changed ? destinationTransitPointId : undefined), 'Journey re-planned.');
+  }
+  correctWeight() {
+    const value = prompt('Weighed weight in kg', String(this.trackingOverview.parcel.weight));
+    const reason = value ? prompt('Reason for the correction') : null;
+    if (value && reason?.trim()) this.staffAction(this.operationsService.correctWeight(this.trackingOverview.parcel.id, Number(value), reason.trim()), 'Weight corrected.');
+  }
+  cancelParcel() {
+    const reason = prompt('Why is this parcel being cancelled?');
+    if (reason?.trim()) this.staffAction(this.operationsService.cancelParcel(this.trackingOverview.parcel.id, reason.trim()), 'Parcel cancelled.');
+  }
 
   async ngOnInit() {
     this.route.params.subscribe(params => {
       this.parcelId = params['id'];
       this.loadParcelDetails();
     });
+
+    // Re-plans, reassignments and handovers made elsewhere refresh this page.
+    this.realtime.connect();
+    this.workflowSubscription = this.realtime.workflowUpdates$.pipe(
+      filter(({ payload }) => !payload?.parcelId || payload.parcelId === this.parcelId.replace('#', '')),
+      debounceTime(500),
+    ).subscribe(() => { if (!this.actionBusy) this.loadParcelDetails(); });
 
     // Check if redirected from assign driver with newly assigned driver
     const navigation = this.router.getCurrentNavigation();
@@ -104,6 +179,8 @@ export class ParcelDetails implements OnInit {
       }
     }
   }
+
+  ngOnDestroy() { this.workflowSubscription?.unsubscribe(); }
 
   ngAfterViewInit() {
     // Ensure map is properly fitted after view is initialized
@@ -206,6 +283,7 @@ export class ParcelDetails implements OnInit {
       id: apiResponse.id,
       trackingNumber: apiResponse.trackingNumber || apiResponse.id,
       status: status,
+      statusLabel: parcelStatusLabel(apiResponse.status),
       pickupDate: this.formatDateTime(apiResponse.actualPickupTime || apiResponse.estimatedPickupTime),
       deliveryDate: this.formatDateTime(apiResponse.actualDeliveryTime || apiResponse.estimatedDeliveryTime),
       weight: weight,
@@ -214,7 +292,17 @@ export class ParcelDetails implements OnInit {
       currentLocation: apiResponse.currentLocation,
       estimatedTime: this.calculateEstimatedTime(apiResponse.actualPickupTime || apiResponse.estimatedPickupTime, apiResponse.actualDeliveryTime || apiResponse.estimatedDeliveryTime),
       routeId: apiResponse.routeId,
-      driver: apiResponse.driverId ? await this.getDriverInfoById(apiResponse.driverId) : undefined,
+      // The parcel response already contains the assigned driver. Using it
+      // avoids a second role-restricted request that could yield “Unknown Driver”.
+      driver: apiResponse.driver ? {
+        id: apiResponse.driver.id,
+        name: apiResponse.driver.name || 'Assigned driver',
+        phone: apiResponse.driver.phone || 'Not available',
+        email: apiResponse.driver.email || 'Not available',
+        vehicleNumber: apiResponse.driver.vehicleNumber || 'Not available',
+        licenseNumber: apiResponse.driver.licenseNumber || 'Not available',
+        profilePicture: apiResponse.driver.profilePicture || undefined,
+      } : apiResponse.driverId ? await this.getDriverInfoById(apiResponse.driverId) : undefined,
       sender: {
         name: apiResponse.senderName || 'Unknown Sender',
         address: apiResponse.pickupAddress || 'Address not available',
@@ -239,23 +327,10 @@ export class ParcelDetails implements OnInit {
 
 
   private mapStatus(apiStatus: string): 'Pending' | 'In Transit' | 'Delivered' | 'Completed' | 'Cancelled' {
-    switch (apiStatus?.toLowerCase()) {
-      case 'pending':
-      case 'assigned':
-        return 'Pending';
-      case 'picked_up':
-      case 'in_transit':
-        return 'In Transit';
-      case 'delivered':
-      case 'delivered_to_recipient':
-        return 'Delivered';
-      case 'completed':
-        return 'Completed';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return 'Pending';
-    }
+    if (inStatusGroup(apiStatus, 'finished')) return apiStatus === 'completed' ? 'Completed' : 'Delivered';
+    if (inStatusGroup(apiStatus, 'closed')) return 'Cancelled';
+    if (inStatusGroup(apiStatus, 'awaitingStart')) return 'Pending';
+    return 'In Transit';
   }
 
   private getPickupDate(deliveryDate: string): string {
@@ -267,6 +342,11 @@ export class ParcelDetails implements OnInit {
       month: 'long', 
       day: 'numeric' 
     });
+  }
+
+  private formatDate(dateTime: string | Date): string {
+    const date = new Date(dateTime);
+    return isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
   formatDateTime(dateTime: string | Date | null | undefined): string {
@@ -391,7 +471,7 @@ export class ParcelDetails implements OnInit {
 
     return statusHistory.map((historyItem, index) => {
       const status = this.mapStatusDisplayName(historyItem.status);
-      const date = this.formatDateTime(historyItem.timestamp);
+      const date = this.formatDate(historyItem.timestamp);
       const time = this.formatTime(historyItem.timestamp);
       const icon = this.getStatusIcon(historyItem.status);
       const location = historyItem.location || this.getDefaultLocation(historyItem.status);
@@ -401,53 +481,29 @@ export class ParcelDetails implements OnInit {
         date,
         time,
         icon,
-        location
+        location,
+        note: historyItem.notes || undefined
       };
     });
   }
 
   private mapStatusDisplayName(status: string): string {
-    switch (status) {
-      case 'pending': return 'Order Placed';
-      case 'assigned': return 'Driver Assigned';
-      case 'picked_up': return 'Picked Up';
-      case 'in_transit': return 'In Transit';
-      case 'delivered_to_recipient': return 'Delivered to Recipient';
-      case 'delivered': return 'Delivered';
-      case 'completed': return 'Completed';
-      case 'cancelled': return 'Cancelled';
-      default: return status;
-    }
+    return parcelStatusLabel(status);
   }
 
   private getStatusIcon(status: string): string {
-    switch (status) {
-      case 'pending': return 'fas fa-circle';
-      case 'assigned': return 'fas fa-user-plus';
-      case 'picked_up': return 'fas fa-box';
-      case 'in_transit': return 'fas fa-truck';
-      case 'delivered_to_recipient': return 'fas fa-flag-checkered';
-      case 'delivered': return 'fas fa-check-circle';
-      case 'completed': return 'fas fa-check-double';
-      case 'cancelled': return 'fas fa-times-circle';
-      default: return 'fas fa-circle';
-    }
+    if (inStatusGroup(status, 'finished')) return 'fas fa-check-circle';
+    if (inStatusGroup(status, 'closed')) return 'fas fa-times-circle';
+    if (inStatusGroup(status, 'awaitingCollection')) return 'fas fa-box-open';
+    if (status === 'tampering_alert') return 'fas fa-exclamation-triangle';
+    if (inStatusGroup(status, 'inTransit')) return 'fas fa-truck';
+    return 'fas fa-circle';
   }
 
   private getDefaultLocation(status: string): string {
-    switch (status) {
-      case 'pending':
-      case 'assigned':
-      case 'picked_up':
-        return 'Pickup Location';
-      case 'in_transit':
-      case 'delivered_to_recipient':
-      case 'delivered':
-      case 'completed':
-        return 'Delivery Location';
-      default:
-        return 'Unknown Location';
-    }
+    if (inStatusGroup(status, 'awaitingStart')) return 'Origin station';
+    if (inStatusGroup(status, 'awaitingCollection') || inStatusGroup(status, 'finished')) return 'Destination station';
+    return 'In the network';
   }
 
   private formatTime(timestamp: string | Date): string {

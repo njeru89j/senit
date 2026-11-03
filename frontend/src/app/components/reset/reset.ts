@@ -53,6 +53,17 @@ export class Reset {
     this.showConfirmPassword = !this.showConfirmPassword;
   }
 
+  get passwordRequirements() {
+    const password = this.resetData.password || '';
+
+    return {
+      minLength: password.length >= 6,
+      letter: /[A-Za-z]/.test(password),
+      number: /\d/.test(password),
+      specialCharacter: /[^A-Za-z\d]/.test(password),
+    };
+  }
+
   getStepDescription(): string {
     switch (this.currentStep) {
       case 1:
@@ -148,8 +159,8 @@ export class Reset {
       return;
     }
 
-    if (this.resetData.password.length < 6) {
-      this.toastService.showError('Password must be at least 6 characters long');
+    if (!Object.values(this.passwordRequirements).every(Boolean)) {
+      this.toastService.showError('Password must be at least 6 characters and include a letter, number, and special character');
       return;
     }
     

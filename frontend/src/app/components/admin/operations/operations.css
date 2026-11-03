@@ -2,3 +2,15 @@
 .input-with-suggestions{position:relative;width:100%}.suggestions-dropdown{position:absolute;top:calc(100% - 14px);left:0;right:0;z-index:30;background:#fff;border:1px solid #d7dce3;border-radius:8px;box-shadow:0 8px 24px #14213d24;max-height:240px;overflow-y:auto}.suggestion-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border-bottom:1px solid #eef0f3;cursor:pointer;background:#fff}.suggestion-item:last-child{border-bottom:0}.suggestion-item:hover,.suggestion-item.selected{background:#fffbe6}.suggestion-content{flex:1;min-width:0}.suggestion-name{font-weight:700;color:#333;margin-bottom:4px}.suggestion-details{display:flex;gap:12px;color:#667085;font-size:12px;min-width:0}.suggestion-email{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.suggestion-phone{color:#888}.suggestion-badge{display:flex;align-items:center;gap:4px;border-radius:999px;background:#d1e7dd;color:#0f5132;font-size:11px;font-weight:700;padding:4px 8px;white-space:nowrap}.suggestions-dropdown::-webkit-scrollbar{width:6px}.suggestions-dropdown::-webkit-scrollbar-track{background:#f1f1f1;border-radius:3px}.suggestions-dropdown::-webkit-scrollbar-thumb{background:var(--brand);border-radius:3px}
 .trend-chart{padding:14px 20px}.trend-row{display:grid;grid-template-columns:minmax(105px,1fr) 3fr 42px;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}.trend-row:last-child{border-bottom:0}.trend-label{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:capitalize}.trend-track{height:10px;background:#edf0f4;border-radius:999px;overflow:hidden}.trend-track span{display:block;height:100%;min-width:4px;border-radius:inherit;background:linear-gradient(90deg,var(--brand),#f0d24a)}.trend-track.locker span{background:linear-gradient(90deg,#1f7a4d,#67c590)}.trend-track.forecast span{background:linear-gradient(90deg,#2463a9,#70a6e5)}.trend-row b{text-align:right;color:var(--navy);font-size:13px}.recommendation small{color:#667085}
 .form-card > .primary-btn + .outline-btn{margin-left:12px}
+
+/* Route map: zoom controls, hover card and pan cursor */
+.map-controls{display:flex;align-items:center;gap:8px}
+.map-controls .icon-btn{width:32px;height:32px;font-size:18px;line-height:1;border-radius:8px}
+.network-map svg{cursor:grab;touch-action:none}
+.network-map svg.dragging{cursor:grabbing}
+.map-stop{cursor:pointer}
+.map-stop circle.inactive{fill:#c7cdd6}
+.map-tooltip{pointer-events:none}
+.map-tooltip rect{fill:#14213d;opacity:.96;stroke:#dbbb02;stroke-width:1.5}
+.map-tooltip text{fill:#f7f9fc;font-size:12px}
+.map-tooltip text.title{fill:#dbbb02;font-weight:700;font-size:13px}

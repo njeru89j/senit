@@ -9,23 +9,14 @@ import {
   Max,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
+import { NotificationType } from '@prisma/client';
 
 // Notification DTOs
 export interface CreateNotificationDto {
   userId: string;
   title: string;
   message: string;
-  type:
-    | 'PARCEL_CREATED'
-    | 'PARCEL_ASSIGNED'
-    | 'PARCEL_PICKED_UP'
-    | 'PARCEL_IN_TRANSIT'
-    | 'PARCEL_DELIVERED_TO_RECIPIENT'
-    | 'PARCEL_DELIVERED'
-    | 'PARCEL_COMPLETED'
-    | 'DRIVER_ASSIGNED'
-    | 'PAYMENT_RECEIVED'
-    | 'REVIEW_RECEIVED';
+  type: NotificationType;
   actionUrl?: string;
   parcelId?: string;
 }
@@ -35,17 +26,7 @@ export interface NotificationResponseDto {
   userId: string;
   title: string;
   message: string;
-  type:
-    | 'PARCEL_CREATED'
-    | 'PARCEL_ASSIGNED'
-    | 'PARCEL_PICKED_UP'
-    | 'PARCEL_IN_TRANSIT'
-    | 'PARCEL_DELIVERED_TO_RECIPIENT'
-    | 'PARCEL_DELIVERED'
-    | 'PARCEL_COMPLETED'
-    | 'DRIVER_ASSIGNED'
-    | 'PAYMENT_RECEIVED'
-    | 'REVIEW_RECEIVED';
+  type: NotificationType;
   isRead: boolean;
   actionUrl?: string;
   parcelId?: string;
@@ -76,17 +57,7 @@ export class NotificationsQueryDto {
 
   @IsOptional()
   @IsString()
-  type?:
-    | 'PARCEL_CREATED'
-    | 'PARCEL_ASSIGNED'
-    | 'PARCEL_PICKED_UP'
-    | 'PARCEL_IN_TRANSIT'
-    | 'PARCEL_DELIVERED_TO_RECIPIENT'
-    | 'PARCEL_DELIVERED'
-    | 'PARCEL_COMPLETED'
-    | 'DRIVER_ASSIGNED'
-    | 'PAYMENT_RECEIVED'
-    | 'REVIEW_RECEIVED';
+  type?: NotificationType;
 
   @IsOptional()
   @Transform(({ value }) => {

@@ -74,6 +74,10 @@
               <option value="TRANSIT_OFFICER">Transit Officer</option>
               <option value="ADMIN">Admin</option>
           </select>
+            <select class="filter-select" [(ngModel)]="selectedRouteId" (change)="onRouteChange()" title="Drivers serving a route, and the officers of its stations">
+            <option value="">Route</option>
+              <option *ngFor="let route of availableRoutes" [value]="route.id">{{ route.name }}</option>
+          </select>
           <button class="clear-filters-btn" (click)="clearFilters()">Clear Filters</button>
         </div>
 
@@ -141,6 +145,14 @@
                   <i class="fas fa-truck"></i>
                   <span>{{ user.totalDeliveries }} deliveries</span>
                 </div>
+                <div class="stat-item" *ngIf="user.station">
+                  <i class="fas fa-warehouse"></i>
+                  <span>{{ user.station.name }} station</span>
+                </div>
+                <div class="stat-item" *ngIf="user.routes?.length">
+                  <i class="fas fa-route"></i>
+                  <span>{{ routeSummary(user) }}</span>
+                </div>
               </div>
               
               <!-- Action Button -->
@@ -194,6 +206,7 @@
               <div class="form-group"><label>Driver's licence number *</label><input name="licenseNumber" [(ngModel)]="driverAccount.licenseNumber" required minlength="5" maxlength="20"></div>
               <div class="form-group"><label>Vehicle type *</label><select name="vehicleType" [(ngModel)]="driverAccount.vehicleType" required><option value="">Select vehicle type</option><option value="MOTORCYCLE">Motorcycle</option><option value="CAR">Car</option><option value="VAN">Van</option><option value="TRUCK">Truck</option></select></div>
               <div class="form-group"><label>Vehicle registration number</label><input name="vehicleNumber" [(ngModel)]="driverAccount.vehicleNumber" maxlength="30" placeholder="Optional"></div>
+              <div class="form-group"><label>Maximum load (kg) *</label><input type="number" name="maxLoadKg" [(ngModel)]="driverAccount.maxLoadKg" min="0.1" placeholder="e.g. 1500 for a 1.5 tonne lorry" [disabled]="driverAccount.vehicleType === 'MOTORCYCLE'"><small *ngIf="driverAccount.vehicleType === 'MOTORCYCLE'">Motorcycles are limited to 15 kg and routes up to 80 km.</small></div>
             </div>
 
             <fieldset class="upgrade-routes"><legend>Available delivery routes <span>(select up to 3)</span></legend>

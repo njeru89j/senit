@@ -51,6 +51,7 @@ export class DriversGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   private readonly logger = new Logger(DriversGateway.name);
   private connectedClients = new Map<string, { userId: string; role: string }>();
+  private lastLocationSave = new Map<string, number>();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -90,6 +91,10 @@ export class DriversGateway implements OnGatewayConnection, OnGatewayDisconnect 
       } else if (role === 'DRIVER') {
         client.join(`driver-${userId}`);
         this.logger.log(`Driver ${userId} joined driver-${userId}`);
+      } else if (role === 'TRANSIT_OFFICER') {
+        // Officers receive the operational work of the stations they are nominated to.
+        const stations = await this.prisma.transitPointOfficer.findMany({ where: { officerId: userId }, select: { transitPointId: true } });
+        for (const station of stations) client.join(`station-${station.transitPointId}`);
       }
       client.join(`user-${userId}`);
       
@@ -133,7 +138,17 @@ export class DriversGateway implements OnGatewayConnection, OnGatewayDisconnect 
         return;
       }
 
-      this.logger.log(`Location update from driver ${data.driverId}: ${data.currentLat}, ${data.currentLng}`);
+      if (!Number.isFinite(data.currentLat) || !Number.isFinite(data.currentLng) || Math.abs(data.currentLat) > 90 || Math.abs(data.currentLng) > 180) {
+        client.emit('error', { message: 'Invalid coordinates' });
+        return;
+      }
+
+      // Assignment ranking reads the saved position, so persist it (at most every 30 seconds per driver).
+      const lastSaved = this.lastLocationSave.get(data.driverId) ?? 0;
+      if (Date.now() - lastSaved >= 30_000) {
+        this.lastLocationSave.set(data.driverId, Date.now());
+        await this.prisma.user.update({ where: { id: data.driverId }, data: { currentLat: data.currentLat, currentLng: data.currentLng, lastActiveAt: new Date() } });
+      }
 
       // Driver locations are operational data and are never broadcast globally.
       this.server.to('admin-room').emit('driverLocationUpdate', {
@@ -254,6 +269,18 @@ export class DriversGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   broadcastNotification(userId: string, notification: unknown) {
-    this.server.to(`user-${userId}`).emit('notificationCreated', notification);
+    this.server?.to(`user-${userId}`).emit('notificationCreated', notification);
+  }
+
+  /**
+   * Operational workflow events (assignmentUpdate, tripUpdate, stationWorkUpdate, parcelStatusUpdate)
+   * to the users involved, the stations affected, and administrators.
+   */
+  emitWorkflowEvent(event: string, payload: object, audience: { userIds?: (string | null | undefined)[]; transitPointIds?: (string | null | undefined)[] }) {
+    if (!this.server) return;
+    const rooms = new Set<string>(['admin-room']);
+    for (const id of audience.userIds ?? []) if (id) rooms.add(`user-${id}`);
+    for (const id of audience.transitPointIds ?? []) if (id) rooms.add(`station-${id}`);
+    this.server.to([...rooms]).emit(event, { ...payload, timestamp: new Date() });
   }
 }

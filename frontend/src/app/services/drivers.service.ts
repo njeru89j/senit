@@ -199,17 +199,8 @@ export class DriversService {
     );
   }
 
-  rejectParcelAssignment(parcelId: string, reason: string): Observable<any> {
-    this.checkAuthentication();
-    return this.http.post<any>(this.getApiUrl(`/drivers/parcels/${parcelId}/reject`), { reason }, { headers: this.getHeaders() })
-      .pipe(catchError(error => this.handleError(error)));
-  }
+    // Accepting, rejecting and collecting assignments: see OperationsService (operations/assignments/*).
 
-  acceptParcelAssignment(parcelId: string): Observable<any> {
-    this.checkAuthentication();
-    return this.http.post<any>(this.getApiUrl(`/drivers/parcels/${parcelId}/accept`), {}, { headers: this.getHeaders() })
-      .pipe(catchError(error => this.handleError(error)));
-  }
 
   reassignParcel(parcelId: string, reassignData: { action: string; newDriverId: string }): Observable<any> {
     this.checkAuthentication();

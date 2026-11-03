@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ParcelsService } from './parcels.service';
 import { ParcelsController } from './parcels.controller';
@@ -6,6 +6,7 @@ import { PublicParcelsController } from './public-parcels.controller';
 import { CommonModule } from '../common/common.module';
 import { SendITMailerModule } from '../mailer/mailer.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { OperationsModule } from '../operations/operations.module';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JWT_CONFIG } from '../common/constants';
 
@@ -18,6 +19,7 @@ import { JWT_CONFIG } from '../common/constants';
     CommonModule,
     SendITMailerModule,
     NotificationsModule,
+    forwardRef(() => OperationsModule),
   ],
   controllers: [ParcelsController, PublicParcelsController],
   providers: [ParcelsService, JwtAuthGuard],

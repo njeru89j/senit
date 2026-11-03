@@ -80,6 +80,33 @@
   flex: 1;
 }
 
+.form-group textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+.form-group textarea:focus {
+  outline: none;
+  border-color: #DBBB02;
+  box-shadow: 0 0 0 3px rgba(219, 187, 2, 0.15);
+}
+
+.optional-label, .field-hint {
+  color: #6b7280;
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.field-hint {
+  margin-top: 4px;
+  text-align: right;
+}
+
 /* Tab Navigation Styles */
 .tab-navigation {
   display: flex;
@@ -315,6 +342,19 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 20px;
+}
+
+.parcel-value-category-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+@media (max-width: 600px) {
+  .parcel-value-category-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
 }
 
 .form-group {
@@ -1541,3 +1581,7 @@
 
 #pickupRoute,
 .address-input-container:has(#pickupRoute) { display: none; }
+
+.collection-choice { border: 1px solid #e4e7ec; border-radius: 10px; padding: 12px 14px; margin: 8px 0 14px; display: grid; gap: 8px; }
+.collection-choice legend { font-weight: 600; padding: 0 6px; }
+.collection-choice small { color: #667085; }

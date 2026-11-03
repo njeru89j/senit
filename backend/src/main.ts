@@ -63,9 +63,14 @@ async function bootstrap() {
     app.setGlobalPrefix('api');
 
     // Serve the SPA while leaving API and Socket.IO requests to Nest.
-    const frontendPath = join(process.cwd(), 'public');
-    const frontendIndex = join(frontendPath, 'index.html');
-    if (existsSync(frontendIndex)) {
+    // Support both local development and process managers that launch the
+    // compiled app from a directory other than `backend`.
+    const frontendPath = [
+      join(process.cwd(), 'public'),
+      join(__dirname, '..', '..', 'public'),
+    ].find((path) => existsSync(join(path, 'index.html')));
+    if (frontendPath) {
+      const frontendIndex = join(frontendPath, 'index.html');
       app.useStaticAssets(frontendPath);
       app.use((request: Request, response: Response, next: NextFunction) => {
         if (

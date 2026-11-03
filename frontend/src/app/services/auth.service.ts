@@ -35,6 +35,10 @@ export interface User {
   currentLng?: number;
   routesServed?: string[];
   currentRouteId?: string;
+
+  // Where a member of staff works: routes a driver serves, or the station an officer runs
+  routes?: Array<{ id: string; name: string }>;
+  station?: { id: string; name: string } | null;
   
   // Performance metrics
   averageRating?: number;

@@ -36,3 +36,9 @@
   opacity: 0.35;
 }
 .network-map{background:#f8fafc;border:1px solid #e4e7ec;border-radius:14px;overflow:auto}.network-map svg{display:block;min-width:760px;width:100%;height:auto}.network-map polyline{fill:none;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;opacity:.78}.network-map circle{fill:#dbbb02;stroke:#17213b;stroke-width:3}.network-map text{font-size:13px;font-weight:700;fill:#17213b;paint-order:stroke;stroke:#fff;stroke-width:4}.route-0{stroke:#2463a9}.route-1{stroke:#d97706}.route-2{stroke:#168052}.route-3{stroke:#8b5cf6}.route-4{stroke:#dc2626}.route-5{stroke:#0891b2}
+
+.route-stop.wide { grid-template-columns: 28px 1fr 110px auto; }
+.route-stop.wide input { margin: 0; padding: 6px 8px; }
+.stop-moves { display: inline-flex; gap: 4px; }
+.inline-filter { display: flex; flex-direction: column; font-size: 12px; font-weight: 600; min-width: 180px; }
+.actions-cell { white-space: nowrap; }

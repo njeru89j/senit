@@ -61,7 +61,7 @@ export const routes: Routes = [
     { path: 'parcel-details/:id', component: DriverParcelDetails, canActivate: [AuthGuard], data: { roles: ['DRIVER'] } },
   ]},
   { path: 'transit-officer', children: [
-    { path: 'dashboard', component: TransitWorkspace, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
+    { path: 'dashboard', component: TransitWorkspace, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER', 'ADMIN'] } },
     { path: 'create-delivery', component: CreateDelivery, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
     { path: 'manage-parcels', component: ManageParcels, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
     { path: 'parcel-details/:id', component: AdminParcelDetails, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },

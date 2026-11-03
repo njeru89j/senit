@@ -33,7 +33,7 @@ describe('SidebarComponent', () => {
 
   it('should filter navigation items based on user role', () => {
     // Mock admin user
-    authService.getCurrentUser.and.returnValue({ role: 'ADMIN', name: 'Admin User' });
+    authService.getCurrentUser.and.returnValue({ role: 'ADMIN', name: 'Admin User' } as any);
     
     fixture.detectChanges();
     
@@ -44,7 +44,7 @@ describe('SidebarComponent', () => {
   });
 
   it('should set correct dashboard route for admin', () => {
-    authService.getCurrentUser.and.returnValue({ role: 'ADMIN', name: 'Admin User' });
+    authService.getCurrentUser.and.returnValue({ role: 'ADMIN', name: 'Admin User' } as any);
     
     fixture.detectChanges();
     
@@ -53,7 +53,7 @@ describe('SidebarComponent', () => {
   });
 
   it('should set correct dashboard route for customer', () => {
-    authService.getCurrentUser.and.returnValue({ role: 'CUSTOMER', name: 'Customer User' });
+    authService.getCurrentUser.and.returnValue({ role: 'CUSTOMER', name: 'Customer User' } as any);
     
     fixture.detectChanges();
     
@@ -62,7 +62,7 @@ describe('SidebarComponent', () => {
   });
 
   it('should set correct dashboard route for driver', () => {
-    authService.getCurrentUser.and.returnValue({ role: 'DRIVER', name: 'Driver User' });
+    authService.getCurrentUser.and.returnValue({ role: 'DRIVER', name: 'Driver User' } as any);
     
     fixture.detectChanges();
     

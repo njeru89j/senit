@@ -22,11 +22,21 @@ export interface Parcel {
   recipientPhone: string;
   driverId?: string;
   assignedAt?: Date;
-  routeId?: string;
+    routeId?: string;
   pickupAddress: string;
   deliveryAddress: string;
   currentLocation?: string;
-  status: 'created' | 'pending' | 'assigned' | 'picked_up' | 'collected' | 'at_transit_point' | 'at_destination' | 'in_transit' | 'in_locker' | 'delivered_to_recipient' | 'delivered' | 'completed' | 'cancelled';
+  originTransitPointId?: string;
+  destinationTransitPointId?: string;
+  currentTransitPointId?: string;
+  /** Who physically holds the parcel: SENDER, STATION, DRIVER, HANDOVER, LOCKER, RECIPIENT or UNKNOWN. */
+  custody?: string;
+  /** Final collection: STATION_COLLECTION or SMART_LOCKER. */
+  deliveryMethod?: string;
+  originConfirmedAt?: Date;
+  readyForCollectionAt?: Date;
+  collectionDeadlineAt?: Date;
+  status: 'awaiting_confirmation' | 'at_origin_transit_point' | 'collected' | 'in_transit' | 'arrived_at_transit_point' | 'at_transit_point' | 'at_destination' | 'locker_assigned' | 'in_locker' | 'delivered' | 'completed' | 'tampering_alert' | 'cancelled' | 'returned';
   weight: number;
   description?: string;
   value?: number;
@@ -72,15 +82,17 @@ export interface CreateParcelDto {
   recipientName: string;
   recipientEmail: string;
   recipientPhone: string;
-  pickupAddress: string;
-  deliveryAddress: string;
+    pickupAddress?: string;
+  deliveryAddress?: string;
   routeId?: string;
   pickupTransitPointId?: string;
   destinationTransitPointId?: string;
+  collectionMethod?: 'STATION_COLLECTION' | 'SMART_LOCKER';
   requestLockerOnConfirmation?: boolean;
   lockerRequestedMinutes?: number;
   weight: number;
   pricePerKg?: number;
+  category?: string;
   description?: string;
   value?: number;
   deliveryInstructions?: string;
@@ -90,25 +102,27 @@ export interface UpdateParcelDto {
   description?: string;
   value?: number;
   deliveryInstructions?: string;
+  // Route-critical fields: only the sender, and only before the origin station receives the parcel.
+  pickupTransitPointId?: string;
+  destinationTransitPointId?: string;
+  weight?: number;
+  collectionMethod?: 'STATION_COLLECTION' | 'SMART_LOCKER';
+  recipientName?: string;
+  recipientEmail?: string;
+  recipientPhone?: string;
 }
 
 export interface ParcelQueryDto {
   page?: number;
   limit?: number;
   search?: string;
-  status?: 'pending' | 'assigned' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled';
+    status?: 'awaiting_confirmation' | 'at_origin_transit_point' | 'collected' | 'in_transit' | 'arrived_at_transit_point' | 'at_transit_point' | 'at_destination' | 'locker_assigned' | 'in_locker' | 'delivered' | 'completed' | 'tampering_alert' | 'cancelled' | 'returned';
   assignedToMe?: boolean;
   sortBy?: 'createdAt' | 'status' | 'weight';
   sortOrder?: 'asc' | 'desc';
 }
 
-export interface ParcelStatusUpdateDto {
-  status: 'created' | 'pending' | 'assigned' | 'picked_up' | 'collected' | 'at_transit_point' | 'at_destination' | 'in_transit' | 'in_locker' | 'delivered_to_recipient' | 'delivered' | 'cancelled';
-  currentLocation?: string;
-  latitude?: number;
-  longitude?: number;
-  notes?: string;
-}
+
 
 export interface DeliveryConfirmationDto {
   customerSignature?: string;
@@ -256,7 +270,7 @@ export class ParcelsService {
     );
   }
 
-  getPublicTracking(trackingNumber: string): Observable<Pick<Parcel, 'trackingNumber' | 'status' | 'pickupAddress' | 'deliveryAddress' | 'currentLocation' | 'estimatedPickupTime' | 'estimatedDeliveryTime' | 'actualDeliveryTime' | 'updatedAt' | 'statusHistory'>> {
+    getPublicTracking(trackingNumber: string): Observable<Pick<Parcel, 'trackingNumber' | 'status' | 'pickupAddress' | 'deliveryAddress' | 'currentLocation' | 'estimatedPickupTime' | 'estimatedDeliveryTime' | 'actualDeliveryTime' | 'updatedAt' | 'statusHistory'> & { journey?: any }> {
     return this.http.get<any>(this.getApiUrl(`/public/parcels/tracking/${encodeURIComponent(trackingNumber.trim())}`));
   }
 
@@ -270,15 +284,7 @@ export class ParcelsService {
     );
   }
 
-  updateParcelStatus(id: string, statusUpdateDto: ParcelStatusUpdateDto): Observable<Parcel> {
-    return this.http.patch<Parcel>(
-      this.getApiUrl(`/parcels/${id}/status`),
-      statusUpdateDto,
-      { headers: this.getHeaders() }
-    ).pipe(
-      catchError(error => this.handleError(error))
-    );
-  }
+  
 
   confirmDelivery(id: string, confirmationDto: DeliveryConfirmationDto): Observable<Parcel> {
     return this.http.patch<Parcel>(
@@ -398,11 +404,8 @@ export class ParcelsService {
     }).pipe(
       switchMap(parcels => {
         // Filter for completed deliveries (delivered, completed, delivered_to_recipient)
-        const completedDeliveries = parcels.filter(p => 
-          p.status === 'delivered' || 
-          p.status === 'completed' || 
-          p.status === 'delivered_to_recipient'
-        );
+        // Parcels this driver carried that have reached their recipient.
+        const completedDeliveries = parcels.filter(p => p.status === 'delivered' || p.status === 'completed');
         
         // Sort by completion date (most recent first)
         const sortedDeliveries = completedDeliveries.sort((a, b) => {
@@ -426,15 +429,9 @@ export class ParcelsService {
       switchMap(parcels => {
         // Calculate metrics from parcels data
         const totalDeliveries = parcels.length;
-        const completedDeliveries = parcels.filter(p => 
-          p.status === 'delivered' || p.status === 'completed' || p.status === 'delivered_to_recipient'
-        ).length;
-        const inTransitDeliveries = parcels.filter(p => 
-          ['assigned', 'picked_up', 'in_transit', 'delivered_to_recipient'].includes(p.status)
-        ).length;
-        const pendingDeliveries = parcels.filter(p => 
-          p.status === 'assigned' || p.status === 'picked_up' || p.status === 'pending'
-        ).length;
+        const completedDeliveries = parcels.filter(p => p.status === 'delivered' || p.status === 'completed').length;
+        const inTransitDeliveries = parcels.filter(p => ['collected', 'in_transit', 'arrived_at_transit_point'].includes(p.status)).length;
+        const pendingDeliveries = parcels.filter(p => ['at_origin_transit_point', 'at_transit_point'].includes(p.status)).length;
         
         // Calculate today's deliveries
         const today = new Date();

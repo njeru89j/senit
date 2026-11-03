@@ -10,12 +10,13 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { JourneyService } from '../operations/workflow/journey.service';
 import { ParcelsService } from './parcels.service';
 import {
   CreateParcelDto,
   UpdateParcelDto,
   ParcelQueryDto,
-  ParcelStatusUpdateDto,
   DeliveryConfirmationDto,
   MarkAsCompletedDto,
 } from './dto';
@@ -34,7 +35,10 @@ interface AuthenticatedRequest {
 @Controller('parcels')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ParcelsController {
-  constructor(private readonly parcelsService: ParcelsService) {}
+  constructor(
+    private readonly parcelsService: ParcelsService,
+    private readonly journey: JourneyService,
+  ) {}
 
   @Post()
   @Roles('CUSTOMER', 'ADMIN', 'TRANSIT_OFFICER')
@@ -42,11 +46,27 @@ export class ParcelsController {
     @Body() createParcelDto: CreateParcelDto,
     @Request() req: AuthenticatedRequest,
   ) {
-    return this.parcelsService.create(
+    const parcel = await this.parcelsService.create(
       createParcelDto,
       req.user.sub,
       req.user.role,
     );
+    if (req.user.role === 'CUSTOMER') return parcel;
+    // Staff accept the parcel over the counter: that is the origin confirmation, so the journey is
+    // frozen and automatic driver assignment starts straight away.
+    const confirmation = await this.journey.confirmAtOrigin(parcel.id, { id: req.user.sub, role: req.user.role as UserRole });
+    return {
+      ...parcel,
+      status: confirmation.parcel.status,
+      custody: confirmation.parcel.custody,
+      autoAssignment: {
+        autoAssigned: confirmation.autoAssigned,
+        driver: confirmation.driver ?? null,
+        acceptanceDeadline: confirmation.acceptanceDeadline,
+        message: confirmation.message,
+      },
+      receipt: confirmation.receipt,
+    };
   }
 
   @Get()
@@ -60,8 +80,8 @@ export class ParcelsController {
 
   @Get('tracking/:trackingNumber')
   @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
-  async findByTrackingNumber(@Param('trackingNumber') trackingNumber: string) {
-    return this.parcelsService.findByTrackingNumber(trackingNumber);
+  async findByTrackingNumber(@Param('trackingNumber') trackingNumber: string, @Request() req: AuthenticatedRequest) {
+    return this.parcelsService.findByTrackingNumber(trackingNumber, req.user?.role);
   }
 
   @Get('anonymous/:email')
@@ -244,16 +264,6 @@ export class ParcelsController {
       req.user.sub,
       req.user.role,
     );
-  }
-
-  @Patch(':id/status')
-  @Roles('DRIVER')
-  async updateStatus(
-    @Param('id') id: string,
-    @Body() statusUpdateDto: ParcelStatusUpdateDto,
-    @Request() req: AuthenticatedRequest,
-  ) {
-    return this.parcelsService.updateStatus(id, statusUpdateDto, req.user.sub);
   }
 
   @Patch(':id/confirm-delivery')

@@ -181,3 +181,69 @@
 .custom-marker-element[data-type="driver"] {
   background-color: #ffc107 !important;
 }
+
+/* Customer parcel details: journey actions and booking edit (kept global to respect the component style budget) */
+.journey-actions{margin-top:14px}.journey-actions .action-btn.danger{background:#fef3f2;color:#b42318;border-color:#fda29b}.journey-actions .action-btn.secondary{background:#f2f4f7;color:#344054}.edit-booking{display:grid;gap:10px;margin-top:10px}.edit-booking label{display:grid;gap:4px;font-weight:600;font-size:.85rem}.edit-booking select,.edit-booking input{padding:8px 10px;border:1px solid #d0d5dd;border-radius:8px;font:inherit}
+
+/* ---------------------------------------------------------------- network map
+   Leaflet renders tooltips and popups outside component styles, so they live here. */
+.network-map-label{background:transparent;border:none;box-shadow:none;color:#14213d;font-weight:700;font-size:12px;padding:0;text-shadow:0 1px 3px #fff,0 -1px 3px #fff,1px 0 3px #fff,-1px 0 3px #fff}
+.network-map-label::before{display:none}
+.network-map-line-label{background:#14213d;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;padding:4px 8px;box-shadow:0 4px 12px rgba(20,33,61,.25)}
+.network-map-line-label::before{border-top-color:#14213d}
+.network-map-popup .leaflet-popup-content-wrapper{background:#fff;border-radius:14px;border:1px solid #e4e7ec;box-shadow:0 18px 40px rgba(16,24,40,.18);padding:0;overflow:hidden}
+.network-map-popup .leaflet-popup-content{margin:0;width:auto!important;min-width:240px;font:400 13px/1.45 inherit;color:#344054}
+.network-map-popup .leaflet-popup-tip{background:#fff;border:1px solid #e4e7ec}
+.network-map-popup .station-card header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;background:linear-gradient(135deg,#14213d,#233a6c)}
+.network-map-popup .station-card header strong{color:#fff;font-size:15px;letter-spacing:.2px}
+.network-map-popup .station-card .pill{background:rgba(219,187,2,.18);color:#dbbb02;border:1px solid rgba(219,187,2,.45);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px}
+.network-map-popup .station-card .pill.inactive{background:rgba(255,255,255,.14);color:#e4e7ec;border-color:rgba(255,255,255,.3)}
+.network-map-popup .station-card dl{margin:0;padding:12px 14px;display:grid;gap:8px}
+.network-map-popup .station-card dl>div{display:grid;grid-template-columns:70px 1fr;gap:10px;align-items:start}
+.network-map-popup .station-card dt{margin:0;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#98a2b3}
+.network-map-popup .station-card dd{margin:0;color:#101828;font-weight:500;overflow-wrap:anywhere}
+@media (max-width:640px){.network-map-popup .leaflet-popup-content{min-width:200px;font-size:12px}.network-map-popup .station-card dl>div{grid-template-columns:62px 1fr}}
+
+/* ------------------------------------------------------------------ controls
+   One look for every dropdown: a caret, a comfortable touch target and a clear
+   focus ring. Components may still override width and colour. */
+select:not([multiple]) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23667085' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  padding-right: 34px;
+  border-radius: 10px;
+  min-height: 42px;
+  max-width: 100%;
+  font: inherit;
+  color: #101828;
+  background-color: #fff;
+  border: 1px solid #d0d5dd;
+  cursor: pointer;
+}
+select:not([multiple]):hover:not(:disabled) { border-color: #b4bcc8; }
+select:not([multiple]):focus-visible { outline: none; border-color: #dbbb02; box-shadow: 0 0 0 3px rgba(219, 187, 2, .25); }
+select:not([multiple]):disabled { background-color: #f9fafb; color: #98a2b3; cursor: not-allowed; }
+select option { color: #101828; background: #fff; }
+
+/* Filter rows: dropdowns share the space instead of one stretching across the screen. */
+.filter-select { flex: 1 1 150px; min-width: 130px; max-width: 220px; }
+@media (max-width: 640px) {
+  .filter-select { flex: 1 1 calc(50% - 8px); max-width: none; }
+  select:not([multiple]) { min-height: 44px; font-size: 0.95rem; }
+}
+
+/* Pagination stays inside the screen on a phone. */
+@media (max-width: 640px) {
+  .pagination, .pagination-controls, .page-numbers {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .pagination button, .pagination-controls button, .page-numbers button { min-width: 36px; padding: 6px 8px; }
+}

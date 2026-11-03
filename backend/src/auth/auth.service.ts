@@ -16,6 +16,7 @@ import { ApiResponse } from '../common/api-response/api-response.util';
 import {
   InvalidCredentialsException,
   UserAlreadyExistsException,
+  PhoneAlreadyExistsException,
   UserNotFoundException,
   TokenExpiredException,
   UserInactiveException,
@@ -56,6 +57,14 @@ export class AuthService {
 
       if (existingUser) {
         throw new UserAlreadyExistsException(createUserDto.email);
+      }
+
+      const existingPhone = await this.prisma.user.findFirst({
+        where: { phone: createUserDto.phone },
+      });
+
+      if (existingPhone) {
+        throw new PhoneAlreadyExistsException(createUserDto.phone);
       }
 
       // Hash password
@@ -154,8 +163,22 @@ export class AuthService {
     } catch (error) {
       this.logger.error('Registration failed', error);
 
-      if (error instanceof UserAlreadyExistsException) {
+      if (
+        error instanceof UserAlreadyExistsException ||
+        error instanceof PhoneAlreadyExistsException
+      ) {
         throw error;
+      }
+
+      // The database uniqueness constraint also protects against two
+      // simultaneous registrations using the same phone number.
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new PhoneAlreadyExistsException(createUserDto.phone);
       }
 
       if (error instanceof Error) {

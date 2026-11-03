@@ -95,7 +95,7 @@
                 name="password" 
                 [(ngModel)]="signupData.password" 
                 required 
-                placeholder="Create a password (min 6 characters)"
+                placeholder="Min 6 characters: letter, number & special character"
                 [disabled]="isLoading"
               >
               <button 
@@ -108,6 +108,24 @@
                 <i class="fas" [class.fa-eye]="!showPassword" [class.fa-eye-slash]="showPassword"></i>
               </button>
             </div>
+            <ul class="password-requirements" aria-live="polite" aria-label="Password requirements">
+              <li [class.met]="passwordRequirements.minLength" [class.unmet]="!passwordRequirements.minLength">
+                <i class="fas" [class.fa-check-circle]="passwordRequirements.minLength" [class.fa-times-circle]="!passwordRequirements.minLength" aria-hidden="true"></i>
+                At least 6 characters
+              </li>
+              <li [class.met]="passwordRequirements.letter" [class.unmet]="!passwordRequirements.letter">
+                <i class="fas" [class.fa-check-circle]="passwordRequirements.letter" [class.fa-times-circle]="!passwordRequirements.letter" aria-hidden="true"></i>
+                At least one letter
+              </li>
+              <li [class.met]="passwordRequirements.number" [class.unmet]="!passwordRequirements.number">
+                <i class="fas" [class.fa-check-circle]="passwordRequirements.number" [class.fa-times-circle]="!passwordRequirements.number" aria-hidden="true"></i>
+                At least one number
+              </li>
+              <li [class.met]="passwordRequirements.specialCharacter" [class.unmet]="!passwordRequirements.specialCharacter">
+                <i class="fas" [class.fa-check-circle]="passwordRequirements.specialCharacter" [class.fa-times-circle]="!passwordRequirements.specialCharacter" aria-hidden="true"></i>
+                At least one special character
+              </li>
+            </ul>
           </div>
           
           <button type="submit" class="signup-btn" [disabled]="isLoading">

@@ -2,166 +2,121 @@ import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { Subject, Subscription, forkJoin } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { AdminService } from '../../../services/admin.service';
 import { OperationsService } from '../../../services/operations.service';
 import { SidebarComponent } from '../../shared/sidebar/sidebar';
+import { NetworkMapComponent } from '../../shared/network-map/network-map';
 import { AuthService } from '../../../services/auth.service';
+import { RealtimeService } from '../../../services/realtime.service';
 
-type OperationsTab = 'network' | 'map' | 'batches' | 'lockers' | 'planning';
+type OperationsTab = 'network' | 'map' | 'trips' | 'lockers' | 'planning';
+const TABS: OperationsTab[] = ['network', 'map', 'trips', 'lockers', 'planning'];
 
-@Component({ selector: 'app-operations', standalone: true, imports: [CommonModule, FormsModule, SidebarComponent], templateUrl: './operations.html', styleUrls: ['./operations.css', './route-order.css'] })
+@Component({ selector: 'app-operations', standalone: true, imports: [CommonModule, FormsModule, SidebarComponent, NetworkMapComponent], templateUrl: './operations.html', styleUrls: ['./operations.css', './route-order.css'] })
 export class Operations implements OnInit, OnDestroy {
   activeTab: OperationsTab = 'network';
-  routes: any[] = []; points: any[] = []; report: any; batches: any[] = []; lockers: any[] = [];
-  forecasts: any[] = []; recommendations: any[] = []; drivers: any[] = []; parcels: any[] = []; lockerRequests: any[] = []; lockerExtensionRequests: any[] = [];
-  route = { name: '', origin: '', destination: '', transitPointIds: [] as string[] };
-  point = { name: '', routeId: '', officerIds: [] as string[] };
-  batchForm = { routeId: '', transitPointId: '', driverId: '', parcelIds: [] as string[] };
-  lockerForm = { routeId: '', transitPointId: '', parcelId: '', stationId: '', size: '', expiresInMinutes: 1440 };
-  stationForm = { name: '', address: '', latitude: 0, longitude: 0, openingHours: '' };
+  routes: any[] = []; points: any[] = []; report: any; lockers: any[] = []; trips: any[] = []; alerts: any[] = [];
+  forecasts: any[] = []; recommendations: any[] = []; lockerExtensionRequests: any[] = [];
+  route = { name: '', transitPointIds: [] as string[], distancesKm: [] as (number | null)[] };
+  point = { name: '', routeId: '', latitude: null as number | null, longitude: null as number | null };
+  stationForm = { transitPointId: '', name: '', address: '', latitude: 0, longitude: 0, openingHours: '' };
   compartmentForm = { stationId: '', compartmentNo: '', size: 'MEDIUM' };
-  lockerFitSizes: Record<string, string> = {};
+  tripStatus = '';
   officerCandidates: any[] = []; nomineeId = ''; nomineeSearch = ''; nomineeResults: any[] = [];
   showNomineeSuggestions = false; selectedNomineeIndex = -1; busy = false; message = ''; generatedLockerCode: any = null;
   readonly isTransitOfficer: boolean;
-  private nomineeSearch$ = new Subject<string>(); private nomineeSearchSubscription?: Subscription;
+  private nomineeSearch$ = new Subject<string>(); private nomineeSearchSubscription?: Subscription; private workflowSubscription?: Subscription;
 
-  constructor(private api: OperationsService, private admin: AdminService, private activatedRoute: ActivatedRoute, auth: AuthService) {
+  constructor(private api: OperationsService, private admin: AdminService, private activatedRoute: ActivatedRoute, auth: AuthService, private realtime: RealtimeService) {
     this.isTransitOfficer = auth.getCurrentUser()?.role === 'TRANSIT_OFFICER';
   }
+
   ngOnInit() {
-    if (this.isTransitOfficer) this.activeTab = 'batches';
-    const initialTab = this.activatedRoute.snapshot.data['initialTab'];
-    if (initialTab === 'batches' || initialTab === 'lockers' || initialTab === 'network' || initialTab === 'map' || initialTab === 'planning') this.activeTab = initialTab;
-    this.activatedRoute.queryParamMap.subscribe(params => {
-      const tab = params.get('tab');
-      if (tab === 'batches' || tab === 'lockers' || tab === 'network' || tab === 'map' || tab === 'planning') this.activeTab = tab;
-    });
+    if (this.isTransitOfficer) this.activeTab = 'trips';
+    const pick = (value: string | null | undefined) => {
+      // Older links used "batches" for what is now trips.
+      const tab = (value === 'batches' ? 'trips' : value) as OperationsTab;
+      if (TABS.includes(tab) && !(this.isTransitOfficer && ['network', 'map', 'planning'].includes(tab))) this.activeTab = tab;
+    };
+    pick(this.activatedRoute.snapshot.data['initialTab']);
+    this.activatedRoute.queryParamMap.subscribe((params) => pick(params.get('tab')));
     this.nomineeSearchSubscription = this.nomineeSearch$.pipe(debounceTime(300), distinctUntilChanged()).subscribe(() => this.searchNomineeSuggestions());
     this.refresh();
+    // Re-plans, exceptions and trip changes made elsewhere update the live lists here.
+    this.realtime.connect();
+    this.workflowSubscription = this.realtime.workflowUpdates$.pipe(debounceTime(800)).subscribe(() => {
+      if (this.busy) return;
+      this.api.alerts().subscribe((v) => (this.alerts = v));
+      this.loadTrips();
+    });
   }
+
   refresh() {
-    this.api.routes().subscribe(v => { this.routes = v; this.selectAssignedTransitPoint(); });
-    this.api.transitPoints().subscribe(v => { this.points = v; this.selectAssignedTransitPoint(); });
-    this.api.batches().subscribe(v => this.batches = v);
-    this.api.lockerStations().subscribe(v => this.lockers = v);
-    this.api.lockerRequests().subscribe(v => this.lockerRequests = v);
-    this.api.lockerExtensionRequests().subscribe(v => this.lockerExtensionRequests = v);
-    this.admin.getParcels({ limit: 200 }).subscribe(v => this.parcels = v.parcels ?? []);
-    if (this.isTransitOfficer) {
-      this.api.officerDrivers().subscribe(v => this.drivers = v);
-      return;
-    }
-    this.api.report().subscribe(v => this.report = v);
-    this.api.forecasts().subscribe(v => this.forecasts = v);
-    this.api.recommendations().subscribe(v => this.recommendations = v);
-    this.api.transitOfficerCandidates().subscribe({
-      next: v => { this.officerCandidates = v; this.searchNomineeSuggestions(); },
-      error: () => this.loadNomineeFallback(),
-    });
-    this.admin.getDrivers({ limit: 100 }).subscribe(v => this.drivers = v.drivers ?? []);
+    this.api.routes().subscribe((v) => (this.routes = v));
+    this.api.transitPoints().subscribe((v) => (this.points = v));
+    this.api.lockerStations().subscribe((v) => (this.lockers = v));
+    this.api.lockerExtensionRequests().subscribe((v) => (this.lockerExtensionRequests = v));
+    this.api.alerts().subscribe((v) => (this.alerts = v));
+    this.loadTrips();
+    if (this.isTransitOfficer) return;
+    this.api.report().subscribe((v) => (this.report = v));
+    this.api.forecasts().subscribe((v) => (this.forecasts = v));
+    this.api.recommendations().subscribe((v) => (this.recommendations = v));
+    this.api.transitOfficerCandidates().subscribe({ next: (v) => { this.officerCandidates = v; this.searchNomineeSuggestions(); }, error: () => this.loadNomineeFallback() });
   }
+
+  loadTrips() { this.api.trips(this.tripStatus || undefined).subscribe((v) => (this.trips = v)); }
   switchTab(tab: OperationsTab) { this.activeTab = tab; this.message = ''; }
-  mapPoint(point: any) {
-    const valid = this.points.filter(item => Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
-    const lats = valid.map(item => item.latitude), lngs = valid.map(item => item.longitude);
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats), minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-    return { x: 60 + ((point.longitude - minLng) / (maxLng - minLng || 1)) * 880, y: 540 - ((point.latitude - minLat) / (maxLat - minLat || 1)) * 480 };
+
+  get activePoints() { return this.points.filter((point) => point.active !== false); }
+  get mappablePoints() { return this.points.filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude) && !(point.latitude === 0 && point.longitude === 0)); }
+  get openAlerts() { return this.alerts.filter((alert) => alert.status !== 'RESOLVED'); }
+  get nominatedTransitOfficers() { return this.officerCandidates.filter((user) => user.role === 'TRANSIT_OFFICER'); }
+  get totalLockers() { return this.lockers.reduce((sum, station) => sum + (station.compartments?.length ?? 0), 0); }
+  get lockerAssignments() {
+    return this.lockers.flatMap((station) => (station.compartments ?? []).filter((compartment: any) => !!compartment.assignment)
+      .map((compartment: any) => ({ ...compartment.assignment, stationName: station.name, compartmentNo: compartment.compartmentNo, size: compartment.size })));
   }
-  routeMapPoints(route: any): string {
-    return this.orderedRoutePoints(route).map((point: any) => { const p = this.mapPoint(point); return `${p.x},${p.y}`; }).join(' ');
-  }
-  run(action: () => any, success: string) { this.busy = true; this.message = ''; action().subscribe({ next: () => { this.busy = false; this.message = success; this.refresh(); }, error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Operation failed'; } }); }
-  addRoute() { this.run(() => this.api.createRoute(this.route), 'Route created'); }
-  addPoint() { this.run(() => this.api.createTransitPoint(this.point), 'Transit point created'); }
-  get selectedRouteTransitPoints() { const route = this.routes.find(r => r.id === this.batchForm.routeId); return (route?.transitPoints ?? []).map((entry: any) => entry.transitPoint ?? entry).filter((point: any) => point.active); }
-  get selectedRouteDrivers() { return this.drivers.filter(driver => { const served = driver.driverProfile?.routesServed ?? driver.routesServed ?? []; return driver.isActive !== false && (served.includes(this.batchForm.routeId) || driver.driverProfile?.currentRouteId === this.batchForm.routeId); }); }
-  get selectedLockerRouteTransitPoints() { const route = this.routes.find(r => r.id === this.lockerForm.routeId); return (route?.transitPoints ?? []).map((entry: any) => entry.transitPoint ?? entry).filter((point: any) => point.active); }
-  get nominatedTransitOfficers() { return this.officerCandidates.filter(user => user.role === 'TRANSIT_OFFICER'); }
-  get hasLockerAvailabilityFilters() { return !!(this.lockerForm.routeId && this.lockerForm.transitPointId && this.lockerForm.size); }
-  get availableLockers() {
-    if (!this.hasLockerAvailabilityFilters) return [];
-    return this.lockers
-      .filter(station => !station.transitPointId || station.transitPointId === this.lockerForm.transitPointId)
-      .flatMap(station => (station.compartments ?? [])
-        .filter((compartment: any) => compartment.status === 'AVAILABLE' && compartment.size === this.lockerForm.size)
-        .map((compartment: any) => ({ ...compartment, stationName: station.name })));
-  }
-  get availableLockerStations() {
-    if (!this.hasLockerAvailabilityFilters) return [];
-    return this.lockers.filter(station =>
-      (!station.transitPointId || station.transitPointId === this.lockerForm.transitPointId)
-      && (station.compartments ?? []).some((compartment: any) => compartment.status === 'AVAILABLE' && compartment.size === this.lockerForm.size),
-    );
-  }
-  get selectedAvailableLocker() { return this.availableLockers[0] ?? null; }
-  get lockerAssignments() { return this.lockers.flatMap(station => (station.compartments ?? []).filter((compartment: any) => !!compartment.assignment).map((compartment: any) => ({ ...compartment.assignment, stationName: station.name, compartmentNo: compartment.compartmentNo, size: compartment.size }))); }
-  reportCount(rows: any[] | undefined, key: string) { return rows?.find(row => row.status === key)?._count ?? 0; }
-  maxForecastVolume() { return Math.max(1, ...this.forecasts.map(forecast => forecast.predictedVolume ?? 0)); }
-  createBatch() { const data = { routeId: this.batchForm.routeId, driverId: this.batchForm.driverId, parcelIds: [...this.batchForm.parcelIds] }; this.run(() => this.api.createBatch(data), `Batch created with ${data.parcelIds.length} parcel(s)`); this.batchForm.parcelIds = []; }
-  verifyAtTransit() {
-    const data = { routeId: this.batchForm.routeId, transitPointId: this.batchForm.transitPointId, parcelIds: [...this.batchForm.parcelIds] };
-    const driverId = this.batchForm.driverId;
+
+  pointName(id: string) { return this.points.find((point) => point.id === id)?.name ?? id; }
+  routeNames(point: any) { return (point.routes ?? []).map((route: any) => route.name).join(', ') || '—'; }
+
+
+  run(action: () => any, success: string) {
     this.busy = true; this.message = '';
-    this.api.verifyParcelsAtTransit(data).subscribe({
-      next: (result: any) => {
-        if (!driverId || !result.awaitingOnwardRoute) {
-          this.busy = false;
-          this.message = `${data.parcelIds.length} parcel(s) verified at the transit station in good condition${driverId ? '; no onward driver is needed at this destination.' : ''}`;
-          this.batchForm.parcelIds = [];
-          this.refresh();
-          return;
-        }
-        this.api.createBatch({ routeId: data.routeId, driverId, parcelIds: data.parcelIds }).subscribe({
-          next: () => {
-            this.busy = false;
-            this.message = `${data.parcelIds.length} parcel(s) verified and assigned to the selected route driver.`;
-            this.batchForm.parcelIds = [];
-            this.refresh();
-          },
-          error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Parcels were verified, but the onward batch could not be created'; },
-        });
-      },
-      error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Transit verification failed'; },
+    action().subscribe({ next: () => { this.busy = false; this.message = success; this.refresh(); }, error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Operation failed'; } });
+  }
+
+  // Network
+  addRouteStop(id: string) {
+    if (!id || this.route.transitPointIds.includes(id)) return;
+    this.route.transitPointIds.push(id);
+    this.route.distancesKm.push(null);
+  }
+  removeRouteStop(index: number) { this.route.transitPointIds.splice(index, 1); this.route.distancesKm.splice(index, 1); }
+  addRoute() {
+    const data = { name: this.route.name.trim(), transitPointIds: [...this.route.transitPointIds], distancesKm: this.route.distancesKm.map((value) => (value === null || value === undefined || (value as any) === '' ? null : Number(value))) };
+    this.busy = true; this.message = '';
+    this.api.createRoute(data).subscribe({
+      next: () => { this.busy = false; this.message = `Route ${data.name} created; it runs in both directions.`; this.route = { name: '', transitPointIds: [], distancesKm: [] }; this.refresh(); },
+      error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Could not create the route'; },
     });
   }
-  toggleBatchParcel(id: string) { const i = this.batchForm.parcelIds.indexOf(id); i >= 0 ? this.batchForm.parcelIds.splice(i, 1) : this.batchForm.parcelIds.push(id); }
-  toggleAllBatchParcels() { const ids = this.batchEligibleParcels.map(p => p.id); this.batchForm.parcelIds = this.batchForm.parcelIds.length === ids.length ? [] : ids; }
-  get batchEligibleParcels() {
-    const route = this.routes.find(item => item.id === this.batchForm.routeId);
-    if (!route) return [];
-    const locations = [route.origin, route.destination, ...this.selectedRouteTransitPoints.map((point: any) => point.name)].map(value => value?.trim().toLowerCase());
-    return this.parcels.filter(p => ['collected', 'in_transit', 'at_transit_point'].includes(p.status) && locations.includes((p.currentLocation || p.pickupAddress || '').trim().toLowerCase()) && (!this.isTransitOfficer || p.currentTransitPointId === this.batchForm.transitPointId));
+  addPoint() {
+    const data = { name: this.point.name.trim(), latitude: Number(this.point.latitude), longitude: Number(this.point.longitude), routeId: this.point.routeId || undefined };
+    this.busy = true; this.message = '';
+    this.api.createTransitPoint(data).subscribe({
+      next: () => { this.busy = false; this.message = `Transit point ${data.name} created.`; this.point = { name: '', routeId: '', latitude: null, longitude: null }; this.refresh(); },
+      error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Could not create the transit point'; },
+    });
   }
-  onBatchRouteChange() {
-    this.batchForm.driverId = ''; this.batchForm.parcelIds = [];
-    if (this.isTransitOfficer) {
-      const assignedPoint = this.points[0];
-      this.batchForm.transitPointId = assignedPoint?.id ?? '';
-    } else {
-      this.batchForm.transitPointId = '';
-    }
+  toggleRoute(route: any) {
+    if (route.active && !confirm(`Deactivate ${route.name}? Journeys that have not started are re-planned; journeys already on the way are flagged for the stations.`)) return;
+    this.run(() => this.api.updateRoute(route.id, { active: !route.active }), `Route ${route.active ? 'deactivated' : 'activated'}`);
   }
-  get lockerEligibleParcels() { return this.parcels.filter(p => p.status === 'at_destination' && p.routeId === this.lockerForm.routeId); }
-  onLockerRouteChange() { this.lockerForm.transitPointId = ''; this.lockerForm.parcelId = ''; this.lockerForm.stationId = ''; this.lockerForm.size = ''; }
-  onLockerTransitPointChange() { this.lockerForm.parcelId = ''; this.lockerForm.stationId = ''; }
-  onLockerSizeChange() { this.lockerForm.stationId = ''; }
-  assignLocker() { const locker = this.selectedAvailableLocker; if (!locker) { this.message = 'No available locker matches the selected route, transit point, and size.'; return; } this.busy = true; this.message = ''; this.generatedLockerCode = null; this.api.assignLocker({ parcelId: this.lockerForm.parcelId, stationId: locker.stationId, routeId: this.lockerForm.routeId, transitPointId: this.lockerForm.transitPointId, size: this.lockerForm.size, expiresInMinutes: +this.lockerForm.expiresInMinutes }).subscribe({ next: (result: any) => { this.busy = false; this.generatedLockerCode = result; this.message = 'Locker assigned and collection code sent to the recipient.'; this.refresh(); }, error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Could not assign locker'; } }); }
-  approveLockerRequest(request: any) { this.busy = true; this.api.confirmLockerFit(request.id, { confirmedSize: this.lockerFitSizes[request.id] || request.size }).subscribe({ next: (result: any) => { this.busy = false; this.generatedLockerCode = result; this.message = `Fit confirmed. Locker ${result.locker.compartmentNo} was allocated and the collection code sent.`; this.refresh(); }, error: (e: any) => { this.busy = false; this.message = e.error?.message ?? 'Could not allocate a suitable locker'; } }); }
-  approveLockerExtension(request: any) { this.run(() => this.api.approveLockerExtension(request.id), 'Locker collection time extended'); }
-  rejectLockerExtension(request: any) { this.run(() => this.api.rejectLockerExtension(request.id), 'Locker extension request rejected'); }
-  rejectLockerRequest(request: any) { this.run(() => this.api.rejectLockerRequest(request.id), 'Locker request rejected'); }
-  regenerateLockerCode(assignment: any) { this.busy = true; this.api.regenerateLockerCode(assignment.id, 1440).subscribe({ next: result => { this.busy = false; this.generatedLockerCode = { assignment, ...result }; this.message = 'Previous code revoked and a new collection code generated.'; }, error: e => { this.busy = false; this.message = e.error?.message ?? 'Could not regenerate code'; } }); }
-  addStation() { this.run(() => this.api.createStation({ ...this.stationForm, latitude: +this.stationForm.latitude, longitude: +this.stationForm.longitude }), 'Smart locker station added'); }
-  addCompartment() { this.run(() => this.api.addCompartment(this.compartmentForm), 'Locker compartment added'); }
-  deactivateCompartment(compartment: any) { this.run(() => this.api.deactivateCompartment(compartment.id), `Locker ${compartment.compartmentNo} deactivated`); }
-  generateForecast() { this.run(() => this.api.generateForecast(), 'Forecasts generated and recommendations refreshed'); }
-  toggleRoute(route: any) { this.run(() => this.api.updateRoute(route.id, { active: !route.active }), `Route ${route.active ? 'deactivated' : 'activated'}`); }
   togglePoint(point: any) { this.run(() => this.api.updateTransitPoint(point.id, { active: !point.active }), `Transit point ${point.active ? 'deactivated' : 'activated'}`); }
-  toggleRoutePoint(id: string) { const i = this.route.transitPointIds.indexOf(id); i >= 0 ? this.route.transitPointIds.splice(i, 1) : this.route.transitPointIds.push(id); }
-  orderedRoutePoints(route: any) { return (route.transitPoints ?? []).map((entry: any) => entry.transitPoint ?? entry); }
   moveRoutePoint(route: any, index: number, direction: -1 | 1) {
     const target = index + direction;
     if (target < 0 || target >= route.transitPoints.length) return;
@@ -169,36 +124,78 @@ export class Operations implements OnInit, OnDestroy {
     route.orderDirty = true;
   }
   saveRouteOrder(route: any) {
-    const transitPointIds = this.orderedRoutePoints(route).map((point: any) => point.id);
-    this.run(() => this.api.updateRoute(route.id, { transitPointIds }), `Transit point order saved for ${route.name}`);
+    const stops = route.transitPoints ?? [];
+    const transitPointIds = stops.map((entry: any) => entry.transitPointId);
+    const distancesKm = stops.map((entry: any, index: number) => (index === 0 || entry.distanceFromPreviousKm === null || entry.distanceFromPreviousKm === undefined || entry.distanceFromPreviousKm === '' ? null : Number(entry.distanceFromPreviousKm)));
+    this.run(() => this.api.updateRoute(route.id, { transitPointIds, distancesKm }), `Stops saved for ${route.name}`);
     route.orderDirty = false;
   }
-  private selectAssignedTransitPoint() {
-    if (!this.isTransitOfficer || !this.points.length) return;
-    const point = this.points[0];
-    const routeId = point.routeId || this.routes.find(route => (route.transitPoints ?? []).some((entry: any) => (entry.transitPoint ?? entry).id === point.id))?.id || '';
-    if (!routeId) return;
-    this.batchForm.routeId = routeId;
-    this.batchForm.transitPointId = point.id;
-    this.lockerForm.routeId = routeId;
-    this.lockerForm.transitPointId = point.id;
+
+  // Trips and exceptions
+  tripStatusLabel(status: string) { return status === 'CREATED' ? 'Preparing' : status === 'IN_TRANSIT' ? 'On the road' : status === 'CLOSED' ? 'Completed' : status === 'CANCELLED' ? 'Cancelled' : status; }
+  tripParcelSummary(trip: any) {
+    const p = trip.parcels ?? {};
+    const parts = [p.COLLECTED ? `${p.COLLECTED} on board` : '', (p.ASSIGNED || 0) + (p.ACCEPTED || 0) ? `${(p.ASSIGNED || 0) + (p.ACCEPTED || 0)} to collect` : '', (p.DROPPED || 0) + (p.COMPLETED || 0) ? `${(p.DROPPED || 0) + (p.COMPLETED || 0)} handed over` : ''].filter(Boolean);
+    return parts.join(' · ') || '—';
   }
+  custodyException(trip: any) {
+    const reason = prompt(`${trip.driver?.name} cannot continue trip ${trip.tripNumber}. What happened?`);
+    if (!reason?.trim()) return;
+    this.run(() => this.api.custodyException(trip.id, reason.trim()), 'Trip stopped. Uncollected parcels were reassigned; parcels on board stay with the driver until a station receives them.');
+  }
+  alertLabel(type: string) {
+    const labels: Record<string, string> = {
+      PARCEL_MISSING: 'Missing', PARCEL_DAMAGED: 'Damaged', UNEXPECTED_PARCEL: 'Unexpected', ROUTE_UNAVAILABLE: 'Route unavailable',
+      CUSTODY_EXCEPTION: 'Driver could not finish', COLLECTION_OVERDUE: 'Collection overdue', SEAL_BROKEN: 'Tamper / seal broken', SEAL_DAMAGED: 'Seal damaged', QR_MISMATCH: 'Seal QR mismatch',
+    };
+    return labels[type] ?? type.replaceAll('_', ' ').toLowerCase();
+  }
+  resolveAlert(alert: any, action: 'CONTINUE' | 'CANCEL_PARCEL' | 'REPLAN') {
+    const outcome = prompt(action === 'CANCEL_PARCEL' ? 'Why is the parcel being cancelled?' : 'What was found and done?');
+    if (!outcome?.trim()) return;
+    this.run(() => this.api.resolveAlert(alert.id, { status: 'RESOLVED', outcome: outcome.trim(), action }), action === 'REPLAN' ? 'Journey re-planned and exception resolved.' : 'Exception resolved.');
+  }
+
+  // Lockers
+  lockerStatusLabel(status: string) { return status === 'AVAILABLE' ? 'Available' : status === 'RESERVED' ? 'Reserved' : status === 'AWAITING_COLLECTION' ? 'In use' : status === 'OUT_OF_SERVICE' ? 'Out of service' : status; }
+  prefillStation() {
+    const point = this.points.find((item) => item.id === this.stationForm.transitPointId);
+    if (!point) return;
+    this.stationForm = { ...this.stationForm, name: this.stationForm.name || `${point.name} Smart Lockers`, address: this.stationForm.address || `${point.name} transit station`, latitude: point.latitude, longitude: point.longitude };
+  }
+  addStation() { this.run(() => this.api.createStation({ ...this.stationForm, latitude: +this.stationForm.latitude, longitude: +this.stationForm.longitude }), 'Smart locker station added'); }
+  addCompartment() { this.run(() => this.api.addCompartment(this.compartmentForm), 'Locker compartment added'); }
+  deactivateCompartment(compartment: any) { this.run(() => this.api.deactivateCompartment(compartment.id), `Locker ${compartment.compartmentNo} deactivated`); }
+  approveLockerExtension(request: any) { this.run(() => this.api.approveLockerExtension(request.id), 'Locker collection time extended'); }
+  rejectLockerExtension(request: any) { this.run(() => this.api.rejectLockerExtension(request.id), 'Locker extension request rejected'); }
+  regenerateLockerCode(assignment: any) {
+    this.busy = true;
+    this.api.regenerateLockerCode(assignment.id, 1440).subscribe({
+      next: (result) => { this.busy = false; this.generatedLockerCode = result; this.message = 'Previous code revoked and a new collection code generated.'; },
+      error: (e) => { this.busy = false; this.message = e.error?.message ?? 'Could not regenerate code'; },
+    });
+  }
+
+  // Planning
+  reportCount(rows: any[] | undefined, key: string) { return rows?.find((row) => row.status === key)?._count ?? 0; }
+  maxForecastVolume() { return Math.max(1, ...this.forecasts.map((forecast) => forecast.predictedVolume ?? 0)); }
+  generateForecast() { this.run(() => this.api.generateForecast(), 'Forecasts generated and recommendations refreshed'); }
+
+  // Officer nomination
   private loadNomineeFallback() {
     this.admin.getUsers(1, 100).subscribe({
-      next: result => { this.officerCandidates = (result.users ?? []).filter((user: any) => ['CUSTOMER', 'TRANSIT_OFFICER'].includes(user.role)); this.searchNomineeSuggestions(); },
-      error: () => this.message = 'Could not load users for transit officer nomination',
+      next: (result) => { this.officerCandidates = (result.users ?? []).filter((user: any) => ['CUSTOMER', 'TRANSIT_OFFICER'].includes(user.role)); this.searchNomineeSuggestions(); },
+      error: () => (this.message = 'Could not load users for transit officer nomination'),
     });
   }
   private searchNomineeCandidates() {
     const q = this.nomineeSearch.trim().toLowerCase();
-    const available = this.officerCandidates.filter(u => u.role !== 'TRANSIT_OFFICER');
-    return (q ? available.filter(u => `${u.name} ${u.email} ${u.phone || ''}`.toLowerCase().includes(q)) : available).slice(0, 8);
+    const available = this.officerCandidates.filter((u) => u.role !== 'TRANSIT_OFFICER');
+    return (q ? available.filter((u) => `${u.name} ${u.email} ${u.phone || ''}`.toLowerCase().includes(q)) : available).slice(0, 8);
   }
   onNomineeSearchChange(value: string) { this.nomineeId = ''; this.nomineeSearch = value; this.searchNomineeSuggestions(); }
   searchNomineeSuggestions() { this.nomineeResults = this.searchNomineeCandidates(); this.showNomineeSuggestions = this.nomineeResults.length > 0; this.selectedNomineeIndex = -1; }
   selectNominee(user: any) { this.nomineeId = user.id; this.nomineeSearch = `${user.name} - ${user.email}`; this.nomineeResults = []; this.showNomineeSuggestions = false; }
-  onNomineeFocus() { this.searchNomineeSuggestions(); } onNomineeBlur() { setTimeout(() => this.showNomineeSuggestions = false, 200); }
-  onNomineeKeyDown(event: KeyboardEvent) { if (!this.showNomineeSuggestions || !this.nomineeResults.length) return; if (event.key === 'ArrowDown') { event.preventDefault(); this.selectedNomineeIndex = Math.min(this.selectedNomineeIndex + 1, this.nomineeResults.length - 1); } else if (event.key === 'ArrowUp') { event.preventDefault(); this.selectedNomineeIndex = Math.max(this.selectedNomineeIndex - 1, 0); } else if (event.key === 'Enter' && this.selectedNomineeIndex >= 0) { event.preventDefault(); this.selectNominee(this.nomineeResults[this.selectedNomineeIndex]); } else if (event.key === 'Escape') this.showNomineeSuggestions = false; }
   nominateOfficer() { if (!this.nomineeId) return; this.run(() => this.api.nominateTransitOfficer(this.nomineeId), 'User nominated as transit officer'); this.nomineeId = ''; this.nomineeSearch = ''; }
-  ngOnDestroy() { this.nomineeSearchSubscription?.unsubscribe(); }
+  ngOnDestroy() { this.nomineeSearchSubscription?.unsubscribe(); this.workflowSubscription?.unsubscribe(); }
 }

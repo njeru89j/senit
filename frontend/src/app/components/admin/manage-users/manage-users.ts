@@ -19,6 +19,9 @@ interface User {
   createdAt: string;
   deletedAt?: string;
   profilePicture?: string;
+  // Where a member of staff works: the routes a driver serves, or an officer's station
+  routes?: Array<{ id: string; name: string }>;
+  station?: { id: string; name: string } | null;
   // Driver-specific fields
   licenseNumber?: string;
   vehicleNumber?: string;
@@ -82,6 +85,7 @@ export class ManageUsers implements OnInit {
   searchTerm = '';
   selectedStatus = '';
   selectedRole = '';
+  selectedRouteId = '';
   
   // Driver applications
   selectedApplicationStatus = '';
@@ -123,7 +127,7 @@ export class ManageUsers implements OnInit {
   };
   driverAccount = {
     name: '', email: '', phone: '', password: '', address: '',
-    licenseNumber: '', vehicleType: '', vehicleNumber: '', routesServed: [] as string[],
+    licenseNumber: '', vehicleType: '', vehicleNumber: '', maxLoadKg: null as number | null, routesServed: [] as string[],
   };
   transitPoints: any[] = [];
   transitOfficerAccount = { name: '', email: '', phone: '', password: '', address: '', transitPointId: '' };
@@ -208,6 +212,10 @@ export class ManageUsers implements OnInit {
       this.toastService.showError('Enter the driver name, email, phone number, password, licence number, and vehicle type.');
       return;
     }
+    if (this.driverAccount.vehicleType !== 'MOTORCYCLE' && (!this.driverAccount.maxLoadKg || this.driverAccount.maxLoadKg <= 0)) {
+      this.toastService.showError('Enter the maximum load capacity in kilograms for this vehicle.');
+      return;
+    }
     if (this.driverAccount.password.length < 8) {
       this.toastService.showError('The temporary password must have at least 8 characters.');
       return;
@@ -216,7 +224,7 @@ export class ManageUsers implements OnInit {
     this.adminService.createDriverAccount(this.driverAccount).subscribe({
       next: (driver) => {
         this.toastService.showSuccess(`${driver.name} now has a driver account.`);
-        this.driverAccount = { name: '', email: '', phone: '', password: '', address: '', licenseNumber: '', vehicleType: '', vehicleNumber: '', routesServed: [] };
+        this.driverAccount = { name: '', email: '', phone: '', password: '', address: '', licenseNumber: '', vehicleType: '', vehicleNumber: '', maxLoadKg: null, routesServed: [] };
         this.isUpgradingCandidate = false;
         this.loadUsers();
       },
@@ -334,6 +342,7 @@ export class ManageUsers implements OnInit {
       // If no status is selected, don't filter by isActive (shows all users)
     }
     if (this.selectedRole) query.role = this.selectedRole;
+    if (this.selectedRouteId) query.routeId = this.selectedRouteId;
     
     console.log('🔍 Debug - loadUsers called with query:', query);
     console.log('🔍 Debug - selectedStatus:', this.selectedStatus);
@@ -423,6 +432,7 @@ export class ManageUsers implements OnInit {
     this.searchTerm = '';
     this.selectedStatus = '';
     this.selectedRole = '';
+    this.selectedRouteId = '';
     this.currentPage = 1;
     this.loadUsers();
   }
@@ -441,6 +451,17 @@ export class ManageUsers implements OnInit {
 
   // Add method to handle role filter changes
   onRoleChange() {
+    this.currentPage = 1;
+    this.loadUsers();
+  }
+
+  /** Routes a driver serves, or the routes calling at an officer's station. */
+  routeSummary(user: any): string {
+    const names = (user.routes ?? []).map((route: any) => route.name);
+    return names.length <= 2 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
+  }
+
+  onRouteChange() {
     this.currentPage = 1;
     this.loadUsers();
   }

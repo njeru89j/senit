@@ -8,16 +8,21 @@ export interface CreateParcelDto {
   recipientName: string;
   recipientEmail: string;
   recipientPhone: string;
-  pickupAddress: string;
-  deliveryAddress: string;
+  /** Derived from the transit points; accepted for backwards compatibility. */
+  pickupAddress?: string;
+  deliveryAddress?: string;
   routeId?: string;
   pickupTransitPointId?: string;
   destinationTransitPointId?: string;
+  /** STATION_COLLECTION (default) or SMART_LOCKER. */
+  collectionMethod?: 'STATION_COLLECTION' | 'SMART_LOCKER';
+  /** Legacy flag: true means SMART_LOCKER. */
   requestLockerOnConfirmation?: boolean;
   lockerRequestedMinutes?: number;
   weight: number;
   // Only staff workflows may set a standard rate for the delivery.
   pricePerKg?: number;
+  category?: string;
   description?: string;
   value?: number;
   deliveryInstructions?: string;
@@ -29,6 +34,14 @@ export interface UpdateParcelDto {
   value?: number;
   deliveryInstructions?: string;
   notes?: string;
+  // Route-critical: the sender may change these only before origin confirmation.
+  pickupTransitPointId?: string;
+  destinationTransitPointId?: string;
+  weight?: number;
+  collectionMethod?: 'STATION_COLLECTION' | 'SMART_LOCKER';
+  recipientName?: string;
+  recipientEmail?: string;
+  recipientPhone?: string;
 }
 
 export interface ParcelQueryDto {
@@ -39,14 +52,6 @@ export interface ParcelQueryDto {
   dateFrom?: string;
   dateTo?: string;
   assignedToMe?: boolean;
-}
-
-export interface ParcelStatusUpdateDto {
-  status: ParcelStatus;
-  currentLocation?: string;
-  latitude?: number;
-  longitude?: number;
-  notes?: string;
 }
 
 export interface DeliveryConfirmationDto {
@@ -72,11 +77,20 @@ export interface ParcelResponseDto {
   driverId?: string;
   assignedAt?: Date;
   routeId?: string;
+  originTransitPointId?: string;
+  destinationTransitPointId?: string;
+  currentTransitPointId?: string;
+  custody?: string;
+  deliveryMethod?: string;
+  originConfirmedAt?: Date;
+  readyForCollectionAt?: Date;
+  collectionDeadlineAt?: Date;
   pickupAddress: string;
   deliveryAddress: string;
   currentLocation?: string;
   status: ParcelStatus;
   weight: number;
+  category?: string;
   description?: string;
   value?: number;
   deliveryInstructions?: string;

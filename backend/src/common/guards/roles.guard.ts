@@ -24,6 +24,10 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
+    // Admins hold every transit-officer capability across all stations; the
+    // services apply station scoping only to officers.
+    if (user.role === 'ADMIN' && requiredRoles.includes('TRANSIT_OFFICER')) return true;
+
     return requiredRoles.some((role) => user.role === role);
   }
 }
