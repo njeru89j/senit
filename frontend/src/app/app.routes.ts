@@ -92,4 +92,10 @@ export const routes: Routes = [
   { path: 'driver-my-parcels', component: AssignedParcels, canActivate: [AuthGuard], data: { roles: ['DRIVER'] } },
   { path: 'driver-history', component: DeliveryHistory, canActivate: [AuthGuard], data: { roles: ['DRIVER'] } },
   { path: 'driver-parcel-details/:id', component: DriverParcelDetails, canActivate: [AuthGuard], data: { roles: ['DRIVER'] } },
+
+  // Links stored in older notifications and emails.
+  { path: 'parcels/:id', redirectTo: 'user/parcel-details/:id' },
+  { path: 'parcel/:id', redirectTo: 'user/parcel-details/:id' },
+  { path: 'dashboard', redirectTo: 'login' },
+  { path: '**', redirectTo: '' },
 ];

@@ -114,7 +114,7 @@ export class WorkflowContext {
 
   /** Registered sender and recipient of a parcel. */
   async notifyParties(parcel: Pick<Parcel, 'id' | 'senderId' | 'recipientId'>, notice: Omit<Notice, 'parcelId' | 'actionUrl'>): Promise<void> {
-    await this.notifyUsers([parcel.senderId, parcel.recipientId], { ...notice, parcelId: parcel.id, actionUrl: `/parcels/${parcel.id}` });
+    await this.notifyUsers([parcel.senderId, parcel.recipientId], { ...notice, parcelId: parcel.id, actionUrl: `/user/parcel-details/${parcel.id}` });
   }
 
   emit(event: 'assignmentUpdate' | 'tripUpdate' | 'stationWorkUpdate' | 'parcelStatusUpdate', payload: object, audience: { userIds?: (string | null | undefined)[]; transitPointIds?: (string | null | undefined)[] }): void {

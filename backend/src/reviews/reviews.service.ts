@@ -134,11 +134,12 @@ export class ReviewsService {
       throw new BadRequestException('Rating must be between 1 and 5');
     }
 
-    // Reviews are unlocked only after the customer confirms completion.
+    // Reviews unlock once the recipient has the parcel (counter or locker collection marks it
+    // delivered); confirming completion afterwards is optional.
     const parcel = await this.prisma.parcel.findFirst({
       where: {
         id: parcelId,
-        status: 'completed',
+        status: { in: ['delivered', 'completed'] },
         deletedAt: null,
       },
       include: {

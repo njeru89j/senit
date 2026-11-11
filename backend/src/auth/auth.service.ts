@@ -127,24 +127,10 @@ export class AuthService {
       // Generate tokens
       const tokens = await this.generateTokens(user);
 
-      // Send welcome email
-      try {
-        this.logger.log(
-          `Debug - User data for email: name="${user.name}", profilePicture="${user.profilePicture}"`,
-        );
-        await this.mailerService.sendWelcomeEmail({
-          to: user.email,
-          name: user.name,
-          profilePicture: user.profilePicture || undefined,
-        });
-        this.logger.log(`Welcome email sent to: ${user.email}`);
-      } catch (emailError) {
-        this.logger.warn(
-          `Failed to send welcome email to ${user.email}:`,
-          emailError,
-        );
-        // Don't fail registration if email fails
-      }
+      // Welcome email in the background: sign-up never waits on (or fails because of) the mail server.
+      void this.mailerService
+        .sendWelcomeEmail({ to: user.email, name: user.name, profilePicture: user.profilePicture || undefined })
+        .catch((emailError) => this.logger.warn(`Failed to send welcome email to ${user.email}:`, emailError));
 
       // Prepare response
       const userResponse: UserResponseDto = this.mapToUserResponse(user, driverProfile);

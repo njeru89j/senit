@@ -576,7 +576,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
   }
 
   markAsComplete() {
-    if (this.parcel && this.parcel.originalStatus === 'delivered_to_recipient') {
+    if (this.parcel && this.awaitingCompletion) {
       // Set loading state
       this.isMarkingAsComplete = true;
       
@@ -667,10 +667,24 @@ export class ParcelDetails implements OnInit, OnDestroy {
       console.error('Cannot mark as complete - conditions not met:', {
         hasParcel: !!this.parcel,
         originalStatus: this.parcel?.originalStatus,
-        requiredStatus: 'delivered_to_recipient'
+        requiredStatus: 'delivered'
       });
       this.toastService.showError('Cannot mark parcel as complete at this time.');
     }
+  }
+
+  /** Sender/recipient by account id (or email for parcels booked before the account existed), never by display name. */
+  private resolveParties() {
+    if (this.isRecipient !== undefined && this.isSender !== undefined) return;
+    const me = this.currentUser;
+    const email = (me?.email || '').toLowerCase();
+    this.isRecipient = !!me && (this.apiParcel?.recipientId === me.id || (!!email && (this.apiParcel?.recipientEmail || this.parcel?.receiverEmail || '').toLowerCase() === email));
+    this.isSender = !!me && (this.apiParcel?.senderId === me.id || (!!email && (this.apiParcel?.senderEmail || this.parcel?.senderEmail || '').toLowerCase() === email));
+  }
+
+  /** Collection at the counter or locker ends the journey with status "delivered"; the recipient may then close it. */
+  private get awaitingCompletion(): boolean {
+    return ['delivered', 'delivered_to_recipient', 'collected_from_locker'].includes(this.parcel?.originalStatus ?? '');
   }
 
   canMarkAsComplete(): boolean {
@@ -678,12 +692,9 @@ export class ParcelDetails implements OnInit, OnDestroy {
     if (!this.parcel || !this.currentUser) return false;
     
     // Determine if current user is the recipient (cache the result)
-    if (this.isRecipient === undefined || this.isSender === undefined) {
-      this.isRecipient = this.parcel.receiverName === this.currentUser.name;
-      this.isSender = this.parcel.senderName === this.currentUser.name;
-    }
+    this.resolveParties();
     
-    const canComplete = this.parcel.originalStatus === 'delivered_to_recipient' && this.isRecipient;
+    const canComplete = this.awaitingCompletion && !!this.isRecipient;
     
     // Only log once per state change to avoid spam
     if (this.lastCanCompleteState !== canComplete) {
@@ -703,7 +714,7 @@ export class ParcelDetails implements OnInit, OnDestroy {
   }
 
   canLeaveReview(): boolean {
-    return this.parcel?.status === 'Completed';
+    return this.parcel?.status === 'Completed' || this.parcel?.status === 'Delivered';
   }
 
   shouldShowReviewSection(): boolean {
@@ -711,12 +722,9 @@ export class ParcelDetails implements OnInit, OnDestroy {
     if (!this.parcel || !this.currentUser) return false;
     
     // Use cached recipient/sender status to avoid repeated calculations
-    if (this.isRecipient === undefined || this.isSender === undefined) {
-      this.isRecipient = this.parcel.receiverName === this.currentUser.name;
-      this.isSender = this.parcel.senderName === this.currentUser.name;
-    }
+    this.resolveParties();
     
-    return (this.parcel.status === 'Completed' || this.showReviewPrompt) && (this.isRecipient || this.isSender);
+    return (this.canLeaveReview() || this.showReviewPrompt) && !!(this.isRecipient || this.isSender);
   }
 
   generateTrackingEvents() {

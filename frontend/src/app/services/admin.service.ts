@@ -299,12 +299,6 @@ export class AdminService {
     }, { headers });
   }
 
-  // Get driver statistics and assigned parcels
-  getDriverStats(driverId: string): Observable<any> {
-    const headers = this.getAuthHeaders();
-    return this.http.get<any>(`${this.apiUrl}/admin/drivers/${driverId}/stats`, { headers });
-  }
-
   getDriverParcels(driverId: string): Observable<any> {
     return this.http.get<any>(`${this.apiUrl}/admin/users/${driverId}/parcels`, {
       headers: this.getAuthHeaders(),

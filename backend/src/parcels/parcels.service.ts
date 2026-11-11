@@ -246,7 +246,7 @@ export class ParcelsService {
           title: 'Parcel Created',
           message: `Your parcel with tracking number ${trackingNumber} has been created successfully.`,
           type: 'PARCEL_CREATED',
-          actionUrl: `/parcel/${parcel.id}`,
+          actionUrl: `/user/parcel-details/${parcel.id}`,
           parcelId: parcel.id,
         });
       }
@@ -258,7 +258,7 @@ export class ParcelsService {
           title: 'Parcel Created',
           message: `A parcel with tracking number ${trackingNumber} has been created for you.`,
           type: 'PARCEL_CREATED',
-          actionUrl: `/parcel/${parcel.id}`,
+          actionUrl: `/user/parcel-details/${parcel.id}`,
           parcelId: parcel.id,
         });
       }
@@ -726,7 +726,7 @@ export class ParcelsService {
           title: 'Parcel Delivered',
           message: `Your parcel with tracking number ${updatedParcel.trackingNumber} has been delivered to the recipient.`,
           type: 'PARCEL_DELIVERED',
-          actionUrl: `/parcel/${updatedParcel.id}`,
+          actionUrl: `/user/parcel-details/${updatedParcel.id}`,
           parcelId: updatedParcel.id,
         });
       }
@@ -738,7 +738,7 @@ export class ParcelsService {
           title: 'Parcel Delivered',
           message: `Your parcel with tracking number ${updatedParcel.trackingNumber} has been delivered successfully.`,
           type: 'PARCEL_DELIVERED',
-          actionUrl: `/parcel/${updatedParcel.id}`,
+          actionUrl: `/user/parcel-details/${updatedParcel.id}`,
           parcelId: updatedParcel.id,
         });
       }
@@ -866,7 +866,7 @@ export class ParcelsService {
           title: 'Parcel Completed',
           message: `Your parcel with tracking number ${updatedParcel.trackingNumber} has been marked as completed by the recipient.`,
           type: 'PARCEL_COMPLETED',
-          actionUrl: `/parcel/${updatedParcel.id}`,
+          actionUrl: `/user/parcel-details/${updatedParcel.id}`,
           parcelId: updatedParcel.id,
         });
       }
@@ -878,7 +878,7 @@ export class ParcelsService {
           title: 'Parcel Completed',
           message: `Your parcel with tracking number ${updatedParcel.trackingNumber} has been marked as completed. You can now leave a review.`,
           type: 'PARCEL_COMPLETED',
-          actionUrl: `/parcel/${updatedParcel.id}`,
+          actionUrl: `/user/parcel-details/${updatedParcel.id}`,
           parcelId: updatedParcel.id,
         });
       }

@@ -46,9 +46,8 @@ export class ReviewsController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  @UsePipes(createJoiValidationPipe(reviewsQuerySchema))
   async findAll(
-    @Query() query: ReviewsQueryDto,
+    @Query(createJoiValidationPipe(reviewsQuerySchema)) query: ReviewsQueryDto,
     @Request() req: AuthenticatedRequest,
   ) {
     return this.reviewsService.findAll(query, req.user.role, req.user.sub);
@@ -99,10 +98,9 @@ export class ReviewsController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('CUSTOMER')
-  @UsePipes(createJoiValidationPipe(updateReviewSchema))
   async update(
     @Param('id') id: string,
-    @Body() updateReviewDto: UpdateReviewDto,
+    @Body(createJoiValidationPipe(updateReviewSchema)) updateReviewDto: UpdateReviewDto,
     @Request() req: AuthenticatedRequest,
   ) {
     return this.reviewsService.update(id, updateReviewDto, req.user.sub);

@@ -1272,6 +1272,8 @@ export class AdminService {
       await tx.auditLog.create({ data: { userId: adminId, action: 'DRIVER_ACCOUNT_CREATED', entityType: 'User', entityId: created.id, after: { email, routesServed } } });
       return created;
     });
+    const routeNames = routesServed.length ? (await this.prisma.route.findMany({ where: { id: { in: routesServed } }, select: { name: true } })).map((route) => route.name) : [];
+    this.sendStaffAccountEmail(driver, 'driver', routeNames.length ? `You are assigned to: ${routeNames.join(', ')}.` : undefined);
     return this.mapToUserResponse(driver);
   }
 
@@ -1288,7 +1290,16 @@ export class AdminService {
       await tx.auditLog.create({ data: { userId: adminId, action: 'TRANSIT_OFFICER_ACCOUNT_CREATED', entityType: 'User', entityId: created.id, after: { transitPointId: point.id } } });
       return created;
     });
+    const station = await this.prisma.transitPoint.findUnique({ where: { id: point.id }, select: { name: true } });
+    this.sendStaffAccountEmail(officer, 'transit officer', station ? `You are the transit officer at ${station.name}.` : undefined);
     return this.mapToUserResponse(officer);
+  }
+
+  /** Tells a newly created driver or transit officer that their account exists. Never blocks or fails the request. */
+  private sendStaffAccountEmail(user: { email: string; name: string }, roleLabel: string, assignment?: string) {
+    void this.mailerService
+      .sendGenericEmail({ to: user.email, subject: `Your SendIT ${roleLabel} account is ready`, template: 'staff-account-created', context: { name: user.name, email: user.email, roleLabel, assignment } })
+      .catch((error) => this.logger.warn(`Account email to ${user.email} failed: ${error instanceof Error ? error.message : error}`));
   }
 
   async manageUser(

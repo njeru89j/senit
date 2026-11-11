@@ -34,20 +34,17 @@ export class CollectionService {
 
   private get prisma() { return this.ctx.prisma; }
 
-  private async email(parcel: Parcel, subject: string, details: { location: string; deadline: Date; locker?: string; collectionCode?: string }) {
-    try {
-      await this.mailer.sendGenericEmail({
-        to: parcel.recipientEmail,
-        subject,
-        template: 'parcel-ready-for-collection',
-        context: {
-          name: parcel.recipientName, parcelId: parcel.id, trackingNumber: parcel.trackingNumber, location: details.location,
-          deadline: details.deadline.toLocaleString('en-KE', { timeZone: 'Africa/Nairobi' }), locker: details.locker, collectionCode: details.collectionCode,
-        },
-      });
-    } catch (error) {
-      this.logger.warn(`Collection email for ${parcel.trackingNumber} failed: ${error instanceof Error ? error.message : error}`);
-    }
+  /** Sent in the background so a slow or unreachable mail server never holds up station work. */
+  private email(parcel: Parcel, subject: string, details: { location: string; deadline: Date; locker?: string; collectionCode?: string }) {
+    void this.mailer.sendGenericEmail({
+      to: parcel.recipientEmail,
+      subject,
+      template: 'parcel-ready-for-collection',
+      context: {
+        name: parcel.recipientName, parcelId: parcel.id, trackingNumber: parcel.trackingNumber, location: details.location,
+        deadline: details.deadline.toLocaleString('en-KE', { timeZone: 'Africa/Nairobi' }), locker: details.locker, collectionCode: details.collectionCode,
+      },
+    }).catch((error) => this.logger.warn(`Collection email for ${parcel.trackingNumber} failed: ${error instanceof Error ? error.message : error}`));
   }
 
   /** Inside the verification transaction: the parcel is now in destination-station custody with a 12-hour window. */
@@ -82,7 +79,7 @@ export class CollectionService {
     } else {
       await this.ctx.notifyParties(parcel, { title: 'Ready for collection', message: `${parcel.trackingNumber} is ready at ${station}. Collect it before ${until}.`, type: NotificationType.PARCEL_READY_FOR_COLLECTION });
     }
-    await this.email(parcel, `Parcel ${parcel.trackingNumber} is ready for collection`, { location: station, deadline });
+    this.email(parcel, `Parcel ${parcel.trackingNumber} is ready for collection`, { location: station, deadline });
     this.ctx.emit('parcelStatusUpdate', { parcelId, status: parcel.status, location: station }, { userIds: [parcel.senderId, parcel.recipientId], transitPointIds: [parcel.currentTransitPointId] });
   }
 
@@ -167,9 +164,9 @@ export class CollectionService {
   /** The code goes to the recipient only; the sender is told the parcel is ready. */
   private async sendCode(parcel: Parcel, stationName: string, compartmentNo: string, code: string, expiresAt: Date) {
     const until = expiresAt.toLocaleString('en-KE', { timeZone: 'Africa/Nairobi' });
-    await this.ctx.notifyUsers([parcel.recipientId], { title: 'Smart locker collection code', message: `${parcel.trackingNumber} is in locker ${compartmentNo} at ${stationName}. Use code ${code} before ${until}.`, type: NotificationType.PARCEL_READY_FOR_COLLECTION, parcelId: parcel.id, actionUrl: `/parcels/${parcel.id}` });
-    if (parcel.senderId !== parcel.recipientId) await this.ctx.notifyUsers([parcel.senderId], { title: 'Parcel in smart locker', message: `${parcel.trackingNumber} is in a smart locker at ${stationName}, ready for the recipient.`, type: NotificationType.PARCEL_READY_FOR_COLLECTION, parcelId: parcel.id, actionUrl: `/parcels/${parcel.id}` });
-    await this.email(parcel, `Parcel ${parcel.trackingNumber} is in your locker`, { location: stationName, locker: compartmentNo, collectionCode: code, deadline: expiresAt });
+    await this.ctx.notifyUsers([parcel.recipientId], { title: 'Smart locker collection code', message: `${parcel.trackingNumber} is in locker ${compartmentNo} at ${stationName}. Use code ${code} before ${until}.`, type: NotificationType.PARCEL_READY_FOR_COLLECTION, parcelId: parcel.id, actionUrl: `/user/parcel-details/${parcel.id}` });
+    if (parcel.senderId !== parcel.recipientId) await this.ctx.notifyUsers([parcel.senderId], { title: 'Parcel in smart locker', message: `${parcel.trackingNumber} is in a smart locker at ${stationName}, ready for the recipient.`, type: NotificationType.PARCEL_READY_FOR_COLLECTION, parcelId: parcel.id, actionUrl: `/user/parcel-details/${parcel.id}` });
+    this.email(parcel, `Parcel ${parcel.trackingNumber} is in your locker`, { location: stationName, locker: compartmentNo, collectionCode: code, deadline: expiresAt });
   }
 
   /** Staff exception control: put a verified parcel into a chosen station's locker straight away. */
@@ -287,7 +284,7 @@ export class CollectionService {
   private async afterDelivered(parcel: Parcel, how: string) {
     await this.ctx.notifyParties(parcel, { title: 'Parcel delivered', message: `${parcel.trackingNumber} was collected ${how}.`, type: NotificationType.PARCEL_DELIVERED });
     this.ctx.emit('parcelStatusUpdate', { parcelId: parcel.id, status: ParcelStatus.delivered }, { userIds: [parcel.senderId, parcel.recipientId], transitPointIds: [parcel.currentTransitPointId] });
-    await this.emailSenderCollected(parcel, how);
+    void this.emailSenderCollected(parcel, how);
   }
 
   /** The sender is told, by email, as soon as the recipient has the parcel in hand. */

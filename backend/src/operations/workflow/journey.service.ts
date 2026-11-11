@@ -120,7 +120,8 @@ export class JourneyService {
     if (!confirmed) return this.confirmationResult(parcel.id, { alreadyConfirmed: true });
 
     const fresh = await this.prisma.parcel.findUniqueOrThrow({ where: { id: parcel.id } });
-    await this.sendConfirmationEmails(fresh, network.point(originId)?.name ?? fresh.pickupAddress);
+    // Email goes out in the background: a slow or unreachable mail server must not hold up the counter.
+    void this.sendConfirmationEmails(fresh, network.point(originId)?.name ?? fresh.pickupAddress);
     await this.ctx.notifyParties(fresh, { title: 'Parcel received', message: `${fresh.trackingNumber} was received at ${network.point(originId)?.name}. Route: ${summary}.`, type: NotificationType.PARCEL_IN_TRANSIT });
     const outcome = await this.dispatch.autoAssignLeg(confirmed);
     return this.confirmationResult(parcel.id, { assignment: outcome });

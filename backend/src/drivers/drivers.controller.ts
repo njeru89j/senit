@@ -8,7 +8,6 @@ import {
   Query,
   HttpCode,
   HttpStatus,
-  UsePipes,
   UseGuards,
   Request,
   BadRequestException,
@@ -101,10 +100,9 @@ export class DriversController {
 
   @Patch(':id/location')
   @Roles('DRIVER')
-  @UsePipes(createJoiValidationPipe(updateLocationSchema))
   updateLocation(
     @Param() params: IdParamDto,
-    @Body() updateLocationDto: UpdateLocationDto,
+    @Body(createJoiValidationPipe(updateLocationSchema)) updateLocationDto: UpdateLocationDto,
     @Request() req: { user: { sub: string } },
   ) {
     // Ensure driver can only update their own location
