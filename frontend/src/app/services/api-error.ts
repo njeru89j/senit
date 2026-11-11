@@ -3,6 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 export interface ApiErrorPayload {
   message?: string | string[];
   error?: string;
+  errors?: string[];
   details?: string[];
 }
 
@@ -18,9 +19,10 @@ export function getApiErrorMessage(error: unknown): string {
   const payload = error.error as ApiErrorPayload | string | null;
   if (typeof payload === 'string' && payload.trim()) return payload;
   if (payload && typeof payload === 'object') {
+    if (payload.errors?.length) return payload.errors.join('. ');
+    if (payload.details?.length) return payload.details.join('. ');
     if (Array.isArray(payload.message)) return payload.message.join('. ');
     if (payload.message) return payload.message;
-    if (payload.details?.length) return payload.details.join('. ');
   }
 
   const defaults: Record<number, string> = {

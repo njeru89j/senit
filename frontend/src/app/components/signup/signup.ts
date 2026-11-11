@@ -26,8 +26,6 @@ export class Signup implements OnInit {
     email: '',
     password: '',
     phone: '',
-    role: 'CUSTOMER',
-    routesServed: []
   };
 
   constructor(
@@ -82,8 +80,6 @@ export class Signup implements OnInit {
 
 
   onSubmit() {
-    this.signupData.role = 'CUSTOMER';
-
     // Validate form
     if (!this.signupData.name || !this.signupData.email || !this.signupData.password || !this.signupData.phone) {
       this.toastService.showError('Please fill in all required fields');

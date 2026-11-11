@@ -78,12 +78,8 @@ export interface CreateUserDto {
   email: string;
   password: string;
   name: string;
-  phone?: string;
+  phone: string;
   address?: string;
-  profilePicture?: string;
-  role?: 'CUSTOMER' | 'DRIVER' | 'ADMIN' | 'TRANSIT_OFFICER';
-  routesServed?: string[];
-  currentRouteId?: string;
 }
 
 export interface ChangePasswordDto {
@@ -166,7 +162,15 @@ export class AuthService {
   }
 
   register(userData: CreateUserDto): Observable<AuthResponse> {
-    return this.http.post<ApiResponseDto<AuthResponse>>(`${this.apiUrl}/auth/register`, userData)
+    const registrationData: CreateUserDto = {
+      name: userData.name,
+      email: userData.email,
+      password: userData.password,
+      phone: userData.phone,
+      address: userData.address,
+    };
+
+    return this.http.post<ApiResponseDto<AuthResponse>>(`${this.apiUrl}/auth/register`, registrationData)
       .pipe(
         map(response => {
           if (response.success && response.data) {
