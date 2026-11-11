@@ -24,6 +24,11 @@ export const registerSchema = Joi.object({
   address: Joi.string().max(200).optional().messages({
     'string.max': 'Address cannot exceed 200 characters',
   }),
+  // Older signup clients send these fields. Discard them; public registration
+  // must not let clients choose a role or assign driver routes.
+  role: Joi.any().strip(),
+  routesServed: Joi.any().strip(),
+  currentRouteId: Joi.any().strip(),
 })
   .unknown(false);
 
