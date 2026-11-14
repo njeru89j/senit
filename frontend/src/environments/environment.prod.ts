@@ -1,5 +1,5 @@
 export const environment = {
   production: true,
-  apiUrl: '/api',
-  mapboxToken: 'your_mapbox_token',
+  apiUrl: 'https://senit.onrender.com/api',
+socketUrl: 'https://senit.onrender.com',
 };
