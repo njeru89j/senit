@@ -26,8 +26,6 @@ export class Signup implements OnInit {
     email: '',
     password: '',
     phone: '',
-    role: 'CUSTOMER',
-    routesServed: []
   };
 
   constructor(

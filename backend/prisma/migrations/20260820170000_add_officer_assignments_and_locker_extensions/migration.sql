@@ -10,10 +10,17 @@ CREATE UNIQUE INDEX "transit_point_officers_officerId_key" ON "transit_point_off
 CREATE UNIQUE INDEX "transit_point_officers_transitPointId_officerId_key" ON "transit_point_officers"("transitPointId", "officerId");
 CREATE INDEX "transit_point_officers_transitPointId_idx" ON "transit_point_officers"("transitPointId");
 
-INSERT INTO "transit_point_officers" ("id", "transitPointId", "officerId", "nominatedAt")
-SELECT CONCAT('legacy-', "id"), "id", "officerId", CURRENT_TIMESTAMP
-FROM "transit_points" WHERE "officerId" IS NOT NULL
-ON CONFLICT ("officerId") DO NOTHING;
+-- Some installations predate the transit_points table. Preserve legacy officer
+-- assignments when it exists, while allowing a fresh database to migrate.
+DO $$
+BEGIN
+  IF to_regclass('public.transit_points') IS NOT NULL THEN
+    INSERT INTO "transit_point_officers" ("id", "transitPointId", "officerId", "nominatedAt")
+    SELECT CONCAT('legacy-', "id"), "id", "officerId", CURRENT_TIMESTAMP
+    FROM "transit_points" WHERE "officerId" IS NOT NULL
+    ON CONFLICT ("officerId") DO NOTHING;
+  END IF;
+END $$;
 
 CREATE TABLE "locker_extension_requests" (
   "id" TEXT NOT NULL,

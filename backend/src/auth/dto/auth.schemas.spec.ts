@@ -21,11 +21,16 @@ describe('registerSchema', () => {
     expect(registerSchema.validate({ ...validRegistration, phone: '07000-00000' }).error).toBeDefined();
   });
 
-  it.each(['ADMIN', 'DRIVER'])('rejects a public %s role request', (role) => {
-    const result = registerSchema.validate({ ...validRegistration, role });
+  it('discards role and route fields from legacy public registration requests', () => {
+    const result = registerSchema.validate({
+      ...validRegistration,
+      role: 'ADMIN',
+      routesServed: ['privileged-route'],
+      currentRouteId: 'privileged-route',
+    });
 
-    expect(result.error).toBeDefined();
-    expect(result.error?.details[0].type).toBe('object.unknown');
+    expect(result.error).toBeUndefined();
+    expect(result.value).toEqual(validRegistration);
   });
 
   it('rejects driver credentials in public registration', () => {
