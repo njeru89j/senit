@@ -22,6 +22,7 @@ import { DriverParcelDetails } from './components/driver/parcel-details/parcel-d
 import { DeliveryHistory } from './components/driver/delivery-history/delivery-history';
 import { Operations } from './components/admin/operations/operations';
 import { TransitWorkspace } from './components/transit-officer/workspace/workspace';
+import { TrackParcel } from './components/track-parcel/track-parcel';
 
 export const routes: Routes = [
   { path: '', component: HomeComponent },
@@ -29,6 +30,8 @@ export const routes: Routes = [
   { path: 'signup', component: Signup },
   { path: 'login', component: Login },
   { path: 'reset', component: Reset },
+  { path: 'track', component: TrackParcel },
+  { path: 'track/:trackingNumber', component: TrackParcel },
   
   // Admin routes - protected with ADMIN role
   { path: 'admin', children: [
@@ -58,10 +61,11 @@ export const routes: Routes = [
     { path: 'parcel-details/:id', component: DriverParcelDetails, canActivate: [AuthGuard], data: { roles: ['DRIVER'] } },
   ]},
   { path: 'transit-officer', children: [
-    { path: 'dashboard', component: AdminDashboard, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
+    { path: 'dashboard', component: TransitWorkspace, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER', 'ADMIN'] } },
     { path: 'create-delivery', component: CreateDelivery, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
     { path: 'manage-parcels', component: ManageParcels, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
     { path: 'parcel-details/:id', component: AdminParcelDetails, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
+    { path: 'assign-driver', component: AssignDriver, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'] } },
     { path: 'operations', component: Operations, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'], initialTab: 'batches' } },
     { path: 'batches', component: Operations, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'], initialTab: 'batches' } },
     { path: 'lockers', component: Operations, canActivate: [AuthGuard], data: { roles: ['TRANSIT_OFFICER'], initialTab: 'lockers' } },
@@ -88,4 +92,10 @@ export const routes: Routes = [
   { path: 'driver-my-parcels', component: AssignedParcels, canActivate: [AuthGuard], data: { roles: ['DRIVER'] } },
   { path: 'driver-history', component: DeliveryHistory, canActivate: [AuthGuard], data: { roles: ['DRIVER'] } },
   { path: 'driver-parcel-details/:id', component: DriverParcelDetails, canActivate: [AuthGuard], data: { roles: ['DRIVER'] } },
+
+  // Links stored in older notifications and emails.
+  { path: 'parcels/:id', redirectTo: 'user/parcel-details/:id' },
+  { path: 'parcel/:id', redirectTo: 'user/parcel-details/:id' },
+  { path: 'dashboard', redirectTo: 'login' },
+  { path: '**', redirectTo: '' },
 ];

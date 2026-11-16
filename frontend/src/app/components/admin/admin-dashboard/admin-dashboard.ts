@@ -194,7 +194,7 @@ export class AdminDashboard implements OnInit, OnDestroy {
   }
 
   formatPercentage(value: number): string {
-    return `${value.toFixed(1)}%`;
+    return `${(value || 0).toFixed(1)}%`;
   }
 
   round(value: number): number {
@@ -457,8 +457,9 @@ export class AdminDashboard implements OnInit, OnDestroy {
 
   private loadTopDriversFromAPI(): void {
     if (this.userRole === 'TRANSIT_OFFICER') {
-      this.operationsService.officerDrivers().subscribe({
-        next: drivers => this.topDrivers = [...drivers].sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0)).slice(0, 3),
+      // Drivers with open trips through the officer's station.
+      this.operationsService.stationQueues().subscribe({
+        next: (data: any) => this.topDrivers = (data?.queues?.drivers ?? []).map((trip: any) => trip.driver).filter(Boolean).slice(0, 3),
         error: () => this.topDrivers = [],
       });
       return;

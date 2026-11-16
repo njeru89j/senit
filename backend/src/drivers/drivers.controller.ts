@@ -8,7 +8,6 @@ import {
   Query,
   HttpCode,
   HttpStatus,
-  UsePipes,
   UseGuards,
   Request,
   BadRequestException,
@@ -16,14 +15,12 @@ import {
 import { DriversService } from './drivers.service';
 import {
   UpdateLocationDto,
-  DriverApplicationDto,
   AssignParcelDto,
   UpdateParcelStatusDto,
 } from '../users/dto';
 import { IdParamDto } from '../common/dto';
 import { createJoiValidationPipe } from '../common/pipes/joi-validation.pipe';
 import {
-  driverApplicationSchema,
   updateLocationSchema,
   assignParcelSchema,
   updateParcelStatusSchema,
@@ -81,6 +78,7 @@ export class DriversController {
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
       minimumRating?: number;
+      routeId?: string;
     },
   ) {
     return this.driversService.findAll(query);
@@ -102,10 +100,9 @@ export class DriversController {
 
   @Patch(':id/location')
   @Roles('DRIVER')
-  @UsePipes(createJoiValidationPipe(updateLocationSchema))
   updateLocation(
     @Param() params: IdParamDto,
-    @Body() updateLocationDto: UpdateLocationDto,
+    @Body(createJoiValidationPipe(updateLocationSchema)) updateLocationDto: UpdateLocationDto,
     @Request() req: { user: { sub: string } },
   ) {
     // Ensure driver can only update their own location
@@ -116,53 +113,8 @@ export class DriversController {
     return this.driversService.updateLocation(params.id, updateLocationDto);
   }
 
-  @Post('apply')
-  @HttpCode(HttpStatus.CREATED)
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-  @UsePipes(createJoiValidationPipe(driverApplicationSchema))
-  @Roles('CUSTOMER', 'ADMIN')
-  applyForDriver(
-    @Body() driverApplicationDto: DriverApplicationDto,
-    @Request() req: { user: { sub: string } },
-  ) {
-    return this.driversService.applyForDriver(
-      req.user.sub,
-      driverApplicationDto,
-    );
-  }
-
-  @Post('assign-parcel')
-  @HttpCode(HttpStatus.OK)
-  @UsePipes(createJoiValidationPipe(assignParcelSchema))
-  @Roles('ADMIN')
-  assignParcel(
-    @Body() assignParcelDto: AssignParcelDto,
-  ): Promise<AssignParcelResponse> {
-    return this.driversService.assignParcel(assignParcelDto);
-  }
-
-  @Patch('parcels/:parcelId/status')
-  @HttpCode(HttpStatus.OK)
-  @UsePipes(createJoiValidationPipe(updateParcelStatusSchema))
-  @Roles('DRIVER')
-  updateParcelStatus(
-    @Param('parcelId') parcelId: string,
-    @Body() updateParcelStatusDto: UpdateParcelStatusDto,
-    @Request() req: { user: { sub: string } },
-  ): Promise<UpdateParcelStatusResponse> {
-    return this.driversService.updateParcelStatus(
-      parcelId,
-      req.user.sub,
-      updateParcelStatusDto,
-    );
-  }
-
-  @Post('parcels/:parcelId/reject')
-  @HttpCode(HttpStatus.OK)
-  @Roles('DRIVER')
-  rejectParcelAssignment(@Param('parcelId') parcelId: string, @Body('reason') reason: string, @Request() req: { user: { sub: string } }) {
-    return this.driversService.rejectParcelAssignment(parcelId, req.user.sub, reason);
-  }
+  // Parcel assignment, acceptance, collection and movement are handled by the operations workflow
+  // (operations/assignments/*, operations/driver/trips/*), which enforces route, capacity and custody rules.
 
   // Admin endpoints for managing driver applications
   @Post('applications/:id/approve')

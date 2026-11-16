@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Parcel collected</title>
+</head>
+<body style="margin:0;background:#f5f6f8;font-family:Arial,sans-serif;color:#17213b">
+  <div style="max-width:600px;margin:0 auto;padding:32px 16px">
+    <div style="background:#17213b;padding:22px;border-radius:12px 12px 0 0;text-align:center">
+      <strong style="font-size:28px;color:#dbbb02">SendIT</strong>
+    </div>
+    <div style="background:#fff;padding:32px;border-radius:0 0 12px 12px">
+      <h1 style="font-size:22px;margin-top:0">Your parcel has been collected</h1>
+      <p>Hello <strong><%= name %></strong>,</p>
+      <p>
+        <strong><%= recipientName %></strong> collected parcel <strong><%= trackingNumber %></strong>
+        <%= how %> at <strong><%= location %></strong> on <strong><%= collectedAt %></strong>.
+      </p>
+      <p>This delivery is now complete. Thank you for sending with SendIT.</p>
+      <p style="text-align:center;margin-top:28px"><a href="<%= baseUrl %>/track/<%= trackingNumber %>" style="background:#dbbb02;color:#17213b;text-decoration:none;padding:12px 20px;border-radius:7px;font-weight:bold">View delivery</a></p>
+      <p style="font-size:12px;color:#667085;margin-top:28px">You are receiving this because you sent this parcel.</p>
+    </div>
+  </div>
+</body>
+</html>

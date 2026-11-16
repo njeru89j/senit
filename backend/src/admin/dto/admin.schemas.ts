@@ -131,17 +131,23 @@ export const parcelFilterSchema = Joi.object({
   }),
   status: Joi.string()
     .valid(
-      'pending',
-      'assigned',
-      'picked_up',
+      'awaiting_confirmation',
+      'at_origin_transit_point',
+      'collected',
       'in_transit',
+      'arrived_at_transit_point',
+      'at_transit_point',
+      'at_destination',
+      'locker_assigned',
+      'in_locker',
       'delivered',
+      'completed',
+      'tampering_alert',
       'cancelled',
     )
     .optional()
     .messages({
-      'any.only':
-        'Status must be pending, assigned, picked_up, in_transit, delivered, or cancelled',
+      'any.only': 'Choose a valid parcel status',
     }),
   assignedDriverId: Joi.string().optional(),
   dateFrom: Joi.string().isoDate().optional().messages({

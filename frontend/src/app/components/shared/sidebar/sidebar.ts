@@ -81,6 +81,12 @@ export class SidebarComponent implements OnInit, AfterViewInit, OnDestroy {
     },
     // Customer-specific items
     {
+      icon: 'fas fa-plus-circle',
+      label: 'Create Delivery',
+      route: '/user/create-parcel',
+      roles: ['CUSTOMER'],
+    },
+    {
       icon: 'fas fa-box', // parcel icon
       label: 'My Parcels',
       route: '/user/parcels',
@@ -89,7 +95,7 @@ export class SidebarComponent implements OnInit, AfterViewInit, OnDestroy {
     // Driver-specific items
     {
       icon: 'fas fa-box', // parcel icon
-      label: 'My Parcels',
+      label: 'My Trip',
       route: '/driver/my-parcels',
       roles: ['DRIVER'],
     },
@@ -99,6 +105,8 @@ export class SidebarComponent implements OnInit, AfterViewInit, OnDestroy {
       route: '/driver/history',
       roles: ['DRIVER'],
     },
+    // Admins hold every transit-officer capability, at any station.
+    { icon: 'fas fa-warehouse', label: 'Transit Operations', route: '/transit-officer/dashboard', roles: ['ADMIN'] },
     { icon: 'fas fa-truck-loading', label: 'Create Delivery', route: '/transit-officer/create-delivery', roles: ['TRANSIT_OFFICER'] },
     { icon: 'fas fa-box', label: 'Manage Parcels', route: '/transit-officer/manage-parcels', roles: ['TRANSIT_OFFICER'] },
     { icon: 'fas fa-route', label: 'Operations', route: '/transit-officer/operations', roles: ['TRANSIT_OFFICER'] },

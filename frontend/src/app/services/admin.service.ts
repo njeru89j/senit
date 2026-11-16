@@ -180,6 +180,21 @@ export class AdminService {
     }>(`${this.apiUrl}/reviews/stats`, { headers });
   }
 
+  upgradeCustomerToDriver(userId: string, details: { licenseNumber: string; vehicleType: string; vehicleNumber?: string; routesServed?: string[] }): Observable<any> {
+    return this.http.patch(this.apiUrl + '/admin/users/' + userId + '/upgrade-to-driver', details, { headers: this.getAuthHeaders() });
+  }
+
+  createDriverAccount(details: { name: string; email: string; phone: string; password: string; address?: string; licenseNumber: string; vehicleType: string; vehicleNumber?: string; routesServed?: string[] }): Observable<any> {
+    return this.http.post(this.apiUrl + '/admin/drivers', details, { headers: this.getAuthHeaders() });
+  }
+  createTransitOfficerAccount(details: { name: string; email: string; phone: string; password: string; address?: string; transitPointId: string }): Observable<any> {
+    return this.http.post(this.apiUrl + '/admin/transit-officers', details, { headers: this.getAuthHeaders() });
+  }
+
+  manageUser(userId: string, action: 'suspend' | 'activate' | 'deactivate' | 'unsuspend', reason?: string): Observable<any> {
+    return this.http.patch(`${this.apiUrl}/admin/users/${userId}/manage`, { action, reason }, { headers: this.getAuthHeaders() });
+  }
+
   // Drivers
   getDrivers(query?: any): Observable<{ drivers: Driver[]; total: number }> {
     const headers = this.getAuthHeaders();
@@ -282,12 +297,6 @@ export class AdminService {
       action: 'reject',
       reason
     }, { headers });
-  }
-
-  // Get driver statistics and assigned parcels
-  getDriverStats(driverId: string): Observable<any> {
-    const headers = this.getAuthHeaders();
-    return this.http.get<any>(`${this.apiUrl}/admin/drivers/${driverId}/stats`, { headers });
   }
 
   getDriverParcels(driverId: string): Observable<any> {

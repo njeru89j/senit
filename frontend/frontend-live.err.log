@@ -1,0 +1,8 @@
+
+Warning: This is a simple server for use in testing or debugging Angular applications
+locally. It hasn't been reviewed for security issues.
+
+Binding this server to an open connection can result in compromising your application or
+computer. Using a different host than the one passed to the "--host" flag might result in
+websocket connection issues.
+    

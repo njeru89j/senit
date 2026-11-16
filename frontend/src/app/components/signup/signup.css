@@ -15,7 +15,8 @@
   border-radius: 12px;
   overflow: hidden;
 box-shadow: rgba(50, 50, 93, 0.25) 0px 50px 100px -20px, rgba(0, 0, 0, 0.3) 0px 30px 60px -30px, rgba(10, 37, 64, 0.35) 0px -2px 6px 0px inset;  min-height: 400px;
-  max-height: 90vh;
+  /* The registration checklist can make the form taller than the viewport. */
+  max-height: none;
   margin-bottom: 100px;
 }
 
@@ -354,6 +355,31 @@ box-shadow: rgba(50, 50, 93, 0.25) 0px 50px 100px -20px, rgba(0, 0, 0, 0.3) 0px 
 .password-toggle:disabled {
   color: #ccc;
   cursor: not-allowed;
+}
+
+.password-requirements {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 0.72rem;
+}
+
+.password-requirements li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.password-requirements .unmet {
+  color: #c62828;
+}
+
+.password-requirements .met {
+  color: #218838;
 }
 
 @keyframes fadeIn {

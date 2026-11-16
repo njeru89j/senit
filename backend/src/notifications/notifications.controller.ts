@@ -38,7 +38,7 @@ export class NotificationsController {
   }
 
   @Get()
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   async getUserNotifications(
     @Query() query: NotificationsQueryDto,
     @Request() req: AuthenticatedRequest,
@@ -50,19 +50,19 @@ export class NotificationsController {
   }
 
   @Get('summary')
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   async getNotificationSummary(@Request() req: AuthenticatedRequest) {
     return this.notificationsService.getNotificationSummary(req.user.sub);
   }
 
   @Get(':id')
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   async findOne(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.notificationsService.findOne(id, req.user.sub);
   }
 
   @Patch(':id/read')
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   async markAsRead(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
@@ -71,20 +71,20 @@ export class NotificationsController {
   }
 
   @Patch('mark-all-read')
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   async markAllAsRead(@Request() req: AuthenticatedRequest) {
     return this.notificationsService.markAllAsRead(req.user.sub);
   }
 
   @Delete(':id')
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   async delete(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     await this.notificationsService.delete(id, req.user.sub);
     return { message: 'Notification deleted successfully' };
   }
 
   @Delete()
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   async deleteAll(@Request() req: AuthenticatedRequest) {
     return this.notificationsService.deleteAll(req.user.sub);
   }

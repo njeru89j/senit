@@ -1,3 +1,4 @@
+import { parcelStatusClass, parcelStatusLabel, inStatusGroup, PARCEL_STATUS_FILTERS } from '../../../utils/parcel-status';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router } from '@angular/router';
@@ -182,9 +183,7 @@ export class UserDashboard implements OnInit {
 
   private calculateDashboardMetrics() {
     // Calculate parcels in transit
-    this.parcelsInTransit = this.allParcels.filter(parcel => 
-      ['assigned', 'picked_up', 'in_transit'].includes(parcel.status)
-    ).length;
+    this.parcelsInTransit = this.allParcels.filter(parcel => inStatusGroup(parcel.status, 'inTransit')).length;
     
     // Calculate scheduled for tomorrow (parcels with estimated pickup time tomorrow)
     const tomorrow = new Date();
@@ -209,8 +208,8 @@ export class UserDashboard implements OnInit {
 
 
   private generateSummaryCards() {
-    const deliveredParcels = this.allParcels.filter(p => p.status === 'delivered').length;
-    const inTransitParcels = this.allParcels.filter(p => ['assigned', 'picked_up', 'in_transit'].includes(p.status)).length;
+    const deliveredParcels = this.allParcels.filter(p => inStatusGroup(p.status, 'finished')).length;
+    const inTransitParcels = this.allParcels.filter(p => inStatusGroup(p.status, 'inTransit')).length;
     
     this.summaryCards = [
       {
@@ -254,21 +253,11 @@ export class UserDashboard implements OnInit {
 
 
   private getStatusIcon(status: string): string {
-    switch (status) {
-      case 'pending':
-      case 'assigned':
-        return 'fas fa-clock';
-      case 'picked_up':
-      case 'in_transit':
-      case 'delivered_to_recipient':
-        return 'fas fa-truck';
-      case 'delivered':
-        return 'fas fa-check';
-      case 'cancelled':
-        return 'fas fa-times';
-      default:
-        return 'fas fa-info-circle';
-    }
+    if (inStatusGroup(status, 'finished')) return 'fas fa-check';
+    if (inStatusGroup(status, 'closed')) return 'fas fa-times';
+    if (inStatusGroup(status, 'awaitingCollection')) return 'fas fa-box-open';
+    if (inStatusGroup(status, 'inTransit')) return 'fas fa-truck';
+    return 'fas fa-clock';
   }
 
   private formatDate(dateString: string): string {
@@ -308,44 +297,13 @@ export class UserDashboard implements OnInit {
   }
 
   getStatusClass(status: string): string {
-    switch (status) {
-      case 'pending':
-      case 'assigned':
-        return 'status-pending';
-      case 'picked_up':
-      case 'in_transit':
-      case 'delivered_to_recipient':
-        return 'status-transit';
-      case 'delivered':
-        return 'status-delivered';
-      case 'cancelled':
-        return 'status-cancelled';
-      default:
-        return '';
-    }
+    return parcelStatusClass(status);
   }
 
 
 
   getStatusDisplayName(status: string): string {
-    switch (status) {
-      case 'pending':
-        return 'Pending';
-      case 'assigned':
-        return 'Assigned';
-      case 'picked_up':
-        return 'Picked Up';
-      case 'in_transit':
-        return 'In Transit';
-      case 'delivered_to_recipient':
-        return 'Delivered to Recipient';
-      case 'delivered':
-        return 'Delivered';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return status;
-    }
+    return parcelStatusLabel(status);
   }
 
   // Spending calculation methods

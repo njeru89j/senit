@@ -42,6 +42,17 @@ export class Signup implements OnInit {
     this.showPassword = !this.showPassword;
   }
 
+  get passwordRequirements() {
+    const password = this.signupData.password || '';
+
+    return {
+      minLength: password.length >= 6,
+      letter: /[A-Za-z]/.test(password),
+      number: /\d/.test(password),
+      specialCharacter: /[^A-Za-z\d]/.test(password),
+    };
+  }
+
   // Check for anonymous parcels when email is entered
   onEmailChange() {
     if (this.signupData.email && this.isValidEmail(this.signupData.email)) {
@@ -57,29 +68,20 @@ export class Signup implements OnInit {
     return emailRegex.test(email);
   }
 
+  /**
+   * Parcels booked for this email before the account existed are linked by the server during
+   * registration, so nothing is requested here (the list is not readable without a token).
+   */
   private checkAnonymousParcels() {
-    this.checkingParcels = true;
-    this.parcelsService.getAnonymousParcels(this.signupData.email).subscribe({
-      next: (parcels) => {
-        this.checkingParcels = false;
-        this.anonymousParcels = parcels;
-        this.showParcelsFound = parcels.length > 0;
-        
-        if (parcels.length > 0) {
-          this.toastService.showInfo(`Found ${parcels.length} previous parcel(s) for this email address. They will be linked to your account after registration.`);
-        }
-      },
-      error: (error) => {
-        this.checkingParcels = false;
-        console.error('Error checking anonymous parcels:', error);
-        // Don't show error to user, just continue with registration
-      }
-    });
+    this.checkingParcels = false;
+    this.showParcelsFound = false;
   }
 
-
-
   onSubmit() {
+    this.signupData.name = this.signupData.name.trim();
+    this.signupData.email = this.signupData.email.trim().toLowerCase();
+    this.signupData.phone = this.signupData.phone?.trim();
+
     // Validate form
     if (!this.signupData.name || !this.signupData.email || !this.signupData.password || !this.signupData.phone) {
       this.toastService.showError('Please fill in all required fields');
@@ -93,8 +95,8 @@ export class Signup implements OnInit {
     }
 
     // Validate password strength
-    if (this.signupData.password.length < 6) {
-      this.toastService.showError('Password must be at least 6 characters long');
+    if (!Object.values(this.passwordRequirements).every(Boolean)) {
+      this.toastService.showError('Password must be at least 6 characters and include a letter, number, and special character');
       return;
     }
 
@@ -112,7 +114,15 @@ export class Signup implements OnInit {
     this.isLoading = true;
 
     // Call auth service
-    this.authService.register(this.signupData).subscribe({
+    const registrationData: CreateUserDto = {
+      name: this.signupData.name,
+      email: this.signupData.email,
+      password: this.signupData.password,
+      phone: this.signupData.phone,
+      ...(this.signupData.address ? { address: this.signupData.address.trim() } : {}),
+    };
+
+    this.authService.register(registrationData).subscribe({
       next: (response) => {
         this.isLoading = false;
         console.log('Registration successful:', response);

@@ -2,16 +2,16 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { Prisma, Parcel, ParcelStatus, User } from '@prisma/client';
+import { CustodyHolder, Prisma, Parcel, ParcelStatus, User, UserRole } from '@prisma/client';
 import {
   CreateParcelDto,
   UpdateParcelDto,
   ParcelQueryDto,
   ParcelResponseDto,
-  ParcelStatusUpdateDto,
   DeliveryConfirmationDto,
   MarkAsCompletedDto,
 } from './dto';
@@ -19,9 +19,10 @@ import { UserResponseDto } from '../users/dto';
 import { MailerService } from '../mailer/mailer.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DELIVERY_FEE_CONFIG } from '../common/constants';
-import { canTransitionParcel } from '../common/parcel-lifecycle';
 import { createHmac, randomBytes } from 'crypto';
 import * as QRCode from 'qrcode';
+import { JourneyService } from '../operations/workflow/journey.service';
+import { COLLECTION_METHODS, SMART_LOCKER, STATION_COLLECTION, lockerSizeFor } from '../operations/workflow/collection.service';
 
 @Injectable()
 export class ParcelsService {
@@ -31,64 +32,48 @@ export class ParcelsService {
     private readonly prisma: PrismaService,
     private readonly mailerService: MailerService,
     private readonly notificationsService: NotificationsService,
+    private readonly journey: JourneyService,
   ) {}
 
-  private normalizePlace(value: string): string {
-    return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  /** Active transit point or a clear error. */
+  private async activePoint(id: string | undefined, label: string) {
+    if (!id) throw new BadRequestException(`Select the ${label} transit point`);
+    const point = await this.prisma.transitPoint.findFirst({ where: { id, active: true }, select: { id: true, name: true, latitude: true, longitude: true } });
+    if (!point) throw new BadRequestException(`Selected ${label} transit point is not available`);
+    return point;
   }
 
-  private async determineRoute(pickupTransitPointId: string, destination: string): Promise<string> {
-    const [pickup, routes, memberships, points] = await Promise.all([
-      this.prisma.transitPoint.findFirst({ where: { id: pickupTransitPointId, active: true } }),
-      this.prisma.route.findMany({ where: { active: true } }),
-      this.prisma.routeTransitPoint.findMany({ orderBy: [{ routeId: 'asc' }, { sequence: 'asc' }] }),
-      this.prisma.transitPoint.findMany({ where: { active: true } }),
-    ]);
-    if (!pickup) throw new BadRequestException('Selected pickup transit point is not available');
-    const pointById = new Map(points.map((point) => [point.id, point]));
-    const target = this.normalizePlace(destination);
-    const routeLocations = routes.map((route) => ({
-      route,
-      locations: [route.origin, ...memberships.filter((item) => item.routeId === route.id).map((item) => pointById.get(item.transitPointId)?.name).filter((name): name is string => !!name), route.destination],
-    }));
-    const queue: Array<{ place: string; firstRouteId?: string }> = [{ place: pickup.name }];
-    const visited = new Set<string>();
-    while (queue.length) {
-      const current = queue.shift()!;
-      const normalized = this.normalizePlace(current.place);
-      if (visited.has(normalized)) continue;
-      visited.add(normalized);
-      if ((normalized === target || normalized.includes(target) || target.includes(normalized)) && current.firstRouteId) return current.firstRouteId;
-      for (const entry of routeLocations) {
-        const index = entry.locations.findIndex((place) => this.normalizePlace(place) === normalized);
-        if (index < 0) continue;
-        for (const next of entry.locations.slice(index + 1)) queue.push({ place: next, firstRouteId: current.firstRouteId ?? entry.route.id });
-      }
-    }
-    throw new BadRequestException(`No interconnected active route was found from ${pickup.name} to ${destination}`);
+  /** Registered customer account for an email, used to link staff-booked parcels to their owners. */
+  private async customerIdByEmail(email?: string | null): Promise<string | undefined> {
+    if (!email?.trim()) return undefined;
+    const user = await this.prisma.user.findFirst({
+      where: { email: { equals: email.trim(), mode: 'insensitive' }, role: 'CUSTOMER', deletedAt: null },
+      select: { id: true },
+    });
+    return user?.id;
   }
 
+  /** Parcels an officer may see: at, from, to, or passing through a leg at their stations. */
   private async getTransitOfficerParcelScope(
     officerId: string,
   ): Promise<Prisma.ParcelWhereInput> {
     const assignments = await this.prisma.transitPointOfficer.findMany({ where: { officerId }, select: { transitPointId: true } });
-    const points = await this.prisma.transitPoint.findMany({
-      where: { id: { in: assignments.map((item) => item.transitPointId) }, active: true },
-      select: { id: true, name: true },
-    });
-    const pointIds = points.map((point) => point.id);
-    const pointNames = points.map((point) => point.name).filter(Boolean);
-
-    if (!pointIds.length && !pointNames.length) {
-      return { id: { in: [] } };
-    }
-
+    const legacy = await this.prisma.transitPoint.findMany({ where: { officerId }, select: { id: true } });
+    const pointIds = [...new Set([...assignments.map((item) => item.transitPointId), ...legacy.map((point) => point.id)])];
+    if (!pointIds.length) return { id: { in: [] } };
     return {
       OR: [
-        ...(pointIds.length ? [{ currentTransitPointId: { in: pointIds } }] : []),
-        ...(pointNames.length ? [{ currentLocation: { in: pointNames } }] : []),
+        { currentTransitPointId: { in: pointIds } },
+        { originTransitPointId: { in: pointIds } },
+        { destinationTransitPointId: { in: pointIds } },
+        { legs: { some: { OR: [{ fromTransitPointId: { in: pointIds } }, { toTransitPointId: { in: pointIds } }] } } },
       ],
     };
+  }
+
+  /** Parcels a driver may see: those they have (or had) an assignment for. */
+  private driverParcelScope(driverId: string): Prisma.ParcelWhereInput {
+    return { OR: [{ driverId }, { legs: { some: { assignments: { some: { driverId } } } } }] };
   }
 
   private addParcelScope(
@@ -111,47 +96,35 @@ export class ParcelsService {
       recipientName,
       recipientEmail,
       recipientPhone,
-      pickupAddress,
-      deliveryAddress,
-      routeId,
       pickupTransitPointId,
       destinationTransitPointId,
+      collectionMethod,
       requestLockerOnConfirmation,
+      lockerRequestedMinutes,
       weight,
+      category,
       description,
       value,
       deliveryInstructions,
     } = createParcelDto;
 
     if (userRole === 'TRANSIT_OFFICER' && userId) {
+      // Over-the-counter bookings originate at the officer's own station.
       const assignment = await this.prisma.transitPointOfficer.findUnique({ where: { officerId: userId } });
       if (!assignment) throw new BadRequestException('Your account is not assigned to an active transit point');
       pickupTransitPointId = assignment.transitPointId;
     }
-
-    if (destinationTransitPointId) {
-      const destinationPoint = await this.prisma.transitPoint.findFirst({
-        where: { id: destinationTransitPointId, active: true },
-        select: { name: true },
-      });
-      if (!destinationPoint) throw new BadRequestException('Selected destination transit point is not available');
-      deliveryAddress = destinationPoint.name;
-    }
-
-    if (pickupTransitPointId) {
-      routeId = await this.determineRoute(pickupTransitPointId, deliveryAddress);
-      pickupAddress = (await this.prisma.transitPoint.findUnique({ where: { id: pickupTransitPointId }, select: { name: true } }))?.name ?? pickupAddress;
-    }
-
-    if (routeId) {
-      const route = await this.prisma.route.findFirst({
-        where: { id: routeId, active: true },
-        select: { id: true },
-      });
-      if (!route) {
-        throw new BadRequestException('Selected route is not available');
-      }
-    }
+    const isStaff = userRole === 'ADMIN' || userRole === 'TRANSIT_OFFICER';
+    const pickupTransitPoint = await this.activePoint(pickupTransitPointId, isStaff ? 'origin' : 'drop-off');
+    const destinationTransitPoint = await this.activePoint(destinationTransitPointId, 'destination');
+    // Route availability is validated now; the journey is frozen when the origin station confirms receipt.
+    const journey = await this.journey.planPreview(pickupTransitPoint.id, destinationTransitPoint.id);
+    const pickupAddress = pickupTransitPoint.name;
+    const deliveryAddress = destinationTransitPoint.name;
+    const journeySummary = journey.summary;
+    const routeId = journey.legs[0].routeId;
+    const method = collectionMethod ?? (requestLockerOnConfirmation ? SMART_LOCKER : STATION_COLLECTION);
+    if (!(COLLECTION_METHODS as readonly string[]).includes(method)) throw new BadRequestException('Choose station collection or smart locker collection');
 
     if (userRole === 'CUSTOMER') {
       const customer = await this.prisma.user.findUnique({
@@ -182,17 +155,19 @@ export class ParcelsService {
     const trackingNumber = await this.generateTrackingNumber();
 
     // Calculate delivery fee based on weight and distance
-    const deliveryFee = this.calculateDeliveryFee(weight, pickupAddress, deliveryAddress);
+    const distanceKm = this.calculateTransitPointDistance(pickupTransitPoint, destinationTransitPoint);
+    const deliveryFee = this.calculateDeliveryFee(weight, pickupAddress, deliveryAddress, undefined, value, distanceKm, category);
+
+    // A customer books for themselves; staff book for a walk-in sender, who owns the parcel
+    // (not the staff member) and is linked now if registered, or on signup otherwise.
+    const senderId = userRole === 'CUSTOMER' ? userId : await this.customerIdByEmail(senderEmail);
 
     // Check if recipient is a registered user
     let recipientId: string | undefined = undefined;
     try {
-      const recipientUser = await this.prisma.user.findUnique({
-        where: { email: recipientEmail },
-        select: { id: true }
-      });
+      const recipientUser = await this.customerIdByEmail(recipientEmail);
       if (recipientUser) {
-        recipientId = recipientUser.id;
+        recipientId = recipientUser;
         this.logger.log(`Recipient ${recipientEmail} is a registered user with ID: ${recipientId}`);
       } else {
         this.logger.log(`Recipient ${recipientEmail} is not a registered user`);
@@ -209,7 +184,7 @@ export class ParcelsService {
         data: {
         trackingNumber,
         qrSealIdentifier: sealIdentifier,
-        senderId: userId,
+        senderId,
         recipientId: recipientId, // Set recipientId if recipient is registered
         senderName,
         senderEmail,
@@ -220,84 +195,58 @@ export class ParcelsService {
         pickupAddress,
         deliveryAddress,
         routeId,
+        originTransitPointId: pickupTransitPoint.id,
+        destinationTransitPointId: destinationTransitPoint.id,
+        deliveryMethod: method,
         weight,
+        category,
         description,
         value,
         deliveryInstructions,
         deliveryFee,
-        status: 'created',
+        // Every parcel starts with the sender; the origin station confirms physical receipt
+        // (staff bookings are confirmed straight after creation by the controller).
+        status: ParcelStatus.awaiting_confirmation,
+        custody: CustodyHolder.SENDER,
+        currentTransitPointId: pickupTransitPoint.id,
+        currentLocation: pickupAddress,
       },
         include: { sender: true, recipient: true, driver: true },
       });
       const signature = createHmac('sha256', signedData).update(`${created.id}:${sealIdentifier}`).digest('hex');
       const qrPayload = JSON.stringify({ type: 'SENDIT_SEAL', parcelId: created.id, identifier: sealIdentifier, signature });
       await tx.parcelSeal.create({ data: { parcelId: created.id, identifier: sealIdentifier, signedData, createdBy: userId ?? created.id } });
-      const lockerRequester = recipientId ?? userId;
-      if (requestLockerOnConfirmation && lockerRequester) {
-        await tx.lockerRequest.create({ data: { parcelId: created.id, requestedBy: lockerRequester, size: 'MEDIUM' } });
+      await tx.parcelStatusHistory.create({
+        data: {
+          parcelId: created.id,
+          status: created.status,
+          location: pickupAddress,
+          updatedBy: userId,
+          notes: (isStaff
+            ? `Parcel booked over the counter at ${pickupAddress} by ${userRole === 'ADMIN' ? 'an admin' : 'the transit officer'}.`
+            : `Booked. Hand the parcel over at ${pickupAddress} within 24 hours.`)
+            + ` Planned journey: ${journeySummary}. Collection: ${method === SMART_LOCKER ? 'smart locker' : 'station counter'}.`,
+        },
+      });
+      const lockerRequester = recipientId ?? senderId ?? userId;
+      if (method === SMART_LOCKER && lockerRequester) {
+        const lockerSize = lockerSizeFor(weight);
+        await tx.lockerRequest.create({ data: { parcelId: created.id, requestedBy: lockerRequester, size: lockerSize, requestedMinutes: Math.min(72 * 60, Math.max(60, Math.round(Number(lockerRequestedMinutes) || 1440))) } });
       }
-      await tx.auditLog.create({ data: { userId, action: 'PARCEL_CREATED_WITH_SECURITY_SEAL', entityType: 'Parcel', entityId: created.id, after: { identifier: sealIdentifier } } });
+      await tx.auditLog.create({ data: { userId, action: 'PARCEL_CREATED_WITH_SECURITY_SEAL', entityType: 'Parcel', entityId: created.id, after: { identifier: sealIdentifier, createdByRole: userRole, senderId: senderId ?? null } } });
       return { parcel: created, qrValue: qrPayload };
     });
-
-    // Send parcel creation email to sender
-    try {
-      this.logger.log(`Debug - Sender data for parcel creation: name="${senderName}", profilePicture="${parcel.sender?.profilePicture}"`);
-      this.logger.log(`Debug - Sender user object:`, JSON.stringify(parcel.sender, null, 2));
-      await this.mailerService.sendParcelCreatedEmail({
-        to: senderEmail,
-        name: senderName,
-        profilePicture: parcel.sender?.profilePicture || undefined,
-        parcelId: parcel.id,
-        trackingNumber,
-        pickupAddress,
-        deliveryAddress,
-        estimatedDelivery: parcel.estimatedDeliveryTime?.toISOString() || 'To be determined',
-      });
-      this.logger.log(`Parcel creation email sent to sender: ${senderEmail}`);
-    } catch (emailError) {
-      this.logger.warn(
-        `Failed to send parcel creation email to sender ${senderEmail}:`,
-        emailError,
-      );
-      // Don't fail parcel creation if email fails
-    }
-
-    // Send parcel creation email to recipient
-    try {
-      this.logger.log(`Debug - Recipient data for parcel creation: name="${recipientName}", profilePicture="${parcel.recipient?.profilePicture}"`);
-      this.logger.log(`Debug - Recipient user object:`, JSON.stringify(parcel.recipient, null, 2));
-      await this.mailerService.sendParcelCreatedEmail({
-        to: recipientEmail,
-        name: recipientName,
-        profilePicture: parcel.recipient?.profilePicture || undefined,
-        parcelId: parcel.id,
-        trackingNumber,
-        pickupAddress,
-        deliveryAddress,
-        estimatedDelivery: parcel.estimatedDeliveryTime?.toISOString() || 'To be determined',
-      });
-      this.logger.log(
-        `Parcel creation email sent to recipient: ${recipientEmail}`,
-      );
-    } catch (emailError) {
-      this.logger.warn(
-        `Failed to send parcel creation email to recipient ${recipientEmail}:`,
-        emailError,
-      );
-      // Don't fail parcel creation if email fails
-    }
 
     // Create notifications for both sender and recipient
     try {
       // Notification for sender (if registered)
-      if (userId) {
+      if (senderId) {
         await this.notificationsService.create({
-          userId: userId,
+          userId: senderId,
           title: 'Parcel Created',
           message: `Your parcel with tracking number ${trackingNumber} has been created successfully.`,
           type: 'PARCEL_CREATED',
-          actionUrl: `/parcel/${parcel.id}`,
+          actionUrl: `/user/parcel-details/${parcel.id}`,
           parcelId: parcel.id,
         });
       }
@@ -309,7 +258,7 @@ export class ParcelsService {
           title: 'Parcel Created',
           message: `A parcel with tracking number ${trackingNumber} has been created for you.`,
           type: 'PARCEL_CREATED',
-          actionUrl: `/parcel/${parcel.id}`,
+          actionUrl: `/user/parcel-details/${parcel.id}`,
           parcelId: parcel.id,
         });
       }
@@ -323,9 +272,9 @@ export class ParcelsService {
     // Update user statistics for sender and recipient
     try {
       // Update sender statistics
-      if (userId) {
+      if (senderId) {
         await this.prisma.user.update({
-          where: { id: userId },
+          where: { id: senderId },
           data: {
             totalParcelsEverSent: {
               increment: 1,
@@ -401,24 +350,17 @@ export class ParcelsService {
         where.OR = [
           { senderId: userId },
           { recipientId: userId },
-          { senderName: user.name },
-          { recipientName: user.name },
-          { senderEmail: user.email },
-          { recipientEmail: user.email }
+          { senderId: null, senderEmail: { equals: user.email, mode: 'insensitive' } },
+          { recipientId: null, recipientEmail: { equals: user.email, mode: 'insensitive' } },
         ];
       } else {
         // Fallback to just ID if user not found
         where.OR = [{ senderId: userId }, { recipientId: userId }];
       }
     } else if (userRole === 'DRIVER' && userId) {
-      if (assignedToMe) {
-        where.driverId = userId;
-      } else {
-        where.OR = [
-          { driverId: userId },
-          { status: 'pending' }, // Drivers can see unassigned parcels
-        ];
-      }
+      // Drivers only ever see parcels they have been assigned (assignedToMe is implied).
+      void assignedToMe;
+      this.addParcelScope(where, this.driverParcelScope(userId));
     } else if (userRole === 'TRANSIT_OFFICER' && userId) {
       this.addParcelScope(where, await this.getTransitOfficerParcelScope(userId));
     }
@@ -476,7 +418,7 @@ export class ParcelsService {
     ]);
 
     return {
-      parcels: parcels.map((parcel) => this.mapToParcelResponse(parcel)),
+      parcels: parcels.map((parcel) => (this.isStaff(userRole) ? this.mapToParcelResponse(parcel) : this.hideStaffDetail(this.mapToParcelResponse(parcel)))),
       total,
       page: pageNum,
       limit: limitNum,
@@ -506,17 +448,16 @@ export class ParcelsService {
         where.OR = [
           { senderId: userId },
           { recipientId: userId },
-          { senderName: user.name },
-          { recipientName: user.name },
-          { senderEmail: user.email },
-          { recipientEmail: user.email }
+          // Unlinked parcels match by email only; display names are not unique.
+          { senderId: null, senderEmail: { equals: user.email, mode: 'insensitive' } },
+          { recipientId: null, recipientEmail: { equals: user.email, mode: 'insensitive' } },
         ];
       } else {
         // Fallback to just ID if user not found
         where.OR = [{ senderId: userId }, { recipientId: userId }];
       }
     } else if (userRole === 'DRIVER' && userId) {
-      where.OR = [{ driverId: userId }, { status: 'pending' }];
+      this.addParcelScope(where, this.driverParcelScope(userId));
     } else if (userRole === 'TRANSIT_OFFICER' && userId) {
       this.addParcelScope(where, await this.getTransitOfficerParcelScope(userId));
     }
@@ -549,12 +490,13 @@ export class ParcelsService {
       throw new NotFoundException('Parcel not found');
     }
 
-    return this.mapToParcelResponse(parcel);
+    return this.isStaff(userRole) ? this.mapToParcelResponse(parcel) : this.hideStaffDetail(this.mapToParcelResponse(parcel));
   }
 
   // Find parcel by tracking number
   async findByTrackingNumber(
     trackingNumber: string,
+    userRole?: string,
   ): Promise<ParcelResponseDto> {
     const parcel = await this.prisma.parcel.findFirst({
       where: {
@@ -587,213 +529,107 @@ export class ParcelsService {
       throw new NotFoundException('Parcel not found');
     }
 
-    return this.mapToParcelResponse(parcel);
+    return this.isStaff(userRole) ? this.mapToParcelResponse(parcel) : this.hideStaffDetail(this.mapToParcelResponse(parcel));
+  }
+
+  async findPublicTrackingByNumber(trackingNumber: string) {
+    const parcel = await this.prisma.parcel.findFirst({
+      where: { trackingNumber, deletedAt: null },
+      select: {
+        trackingNumber: true,
+        status: true,
+        pickupAddress: true,
+        deliveryAddress: true,
+        currentLocation: true,
+        estimatedPickupTime: true,
+        estimatedDeliveryTime: true,
+        actualDeliveryTime: true,
+        updatedAt: true,
+        statusHistory: {
+          orderBy: { timestamp: 'desc' },
+          select: { status: true, location: true, timestamp: true },
+        },
+      },
+    });
+    if (!parcel) throw new NotFoundException('Parcel not found');
+    // Public tracking shows where the parcel is and what has happened, not the internal journey plan.
+    return parcel;
   }
 
   // Update parcel
+  /**
+   * The sender may change route-critical details (stations, weight, recipient, collection method) only
+   * before the origin station confirms receipt; afterwards they are locked and corrections go through the
+   * staff weight-correction and re-plan workflows. Descriptive fields stay editable.
+   */
   async update(
     id: string,
     updateParcelDto: UpdateParcelDto,
     userId?: string,
     userRole?: string,
   ): Promise<ParcelResponseDto> {
-    // Check if user has permission to update this parcel
-    await this.findOne(id, userId, userRole);
+    const existing = await this.findOne(id, userId, userRole);
+    const parcel = await this.prisma.parcel.findUniqueOrThrow({ where: { id } });
+    const { description, value, deliveryInstructions, notes, pickupTransitPointId, destinationTransitPointId, weight, collectionMethod, recipientName, recipientEmail, recipientPhone } = updateParcelDto;
+    const routeCritical = [pickupTransitPointId, destinationTransitPointId, weight, collectionMethod, recipientName, recipientEmail, recipientPhone].some((field) => field !== undefined);
+    if (['delivered', 'completed', 'cancelled', 'returned'].includes(existing.status)) throw new BadRequestException('A closed parcel cannot be edited');
 
-    const { description, value, deliveryInstructions, notes } = updateParcelDto;
-
-    const updatedParcel = await this.prisma.parcel.update({
-      where: { id },
-      data: {
-        description,
-        value,
-        deliveryInstructions,
-        notes,
-      },
-      include: {
-        sender: true,
-        recipient: true,
-        driver: true,
-        statusHistory: {
-          orderBy: { timestamp: 'desc' },
-        },
-      },
-    });
-
-    return this.mapToParcelResponse(updatedParcel);
-  }
-
-  // Update parcel status (for drivers)
-  async updateStatus(
-    id: string,
-    statusUpdateDto: ParcelStatusUpdateDto,
-    driverId: string,
-  ): Promise<ParcelResponseDto> {
-    const { status, currentLocation, latitude, longitude, notes } =
-      statusUpdateDto;
-
-    // Verify parcel is assigned to this driver
-    const parcel = await this.prisma.parcel.findFirst({
-      where: {
-        id,
-        driverId,
-        deletedAt: null,
-      },
-    });
-
-    if (!parcel) {
-      throw new NotFoundException('Parcel not found or not assigned to you');
+    const data: Prisma.ParcelUncheckedUpdateInput = { description, value, deliveryInstructions, notes };
+    if (routeCritical) {
+      if (userRole !== 'CUSTOMER' || parcel.senderId !== userId) throw new ForbiddenException('Only the sender can change these details online. Staff use the weight correction or re-plan actions.');
+      if (parcel.status !== ParcelStatus.awaiting_confirmation) throw new BadRequestException('The route, weight and recipient are locked once the origin station has received the parcel');
+      const origin = await this.activePoint(pickupTransitPointId ?? parcel.originTransitPointId ?? parcel.currentTransitPointId ?? undefined, 'drop-off');
+      const destination = await this.activePoint(destinationTransitPointId ?? parcel.destinationTransitPointId ?? undefined, 'destination');
+      const plan = await this.journey.planPreview(origin.id, destination.id);
+      const newWeight = weight ?? parcel.weight;
+      if (!(newWeight > 0) || newWeight > 1000) throw new BadRequestException('Weight must be between 0 and 1000 kg');
+      const method = collectionMethod ?? parcel.deliveryMethod;
+      if (!(COLLECTION_METHODS as readonly string[]).includes(method)) throw new BadRequestException('Choose station collection or smart locker collection');
+      if (recipientPhone !== undefined && !/^\d{10}$/.test(recipientPhone)) throw new BadRequestException('Recipient phone number must contain exactly 10 digits');
+      const newRecipientEmail = recipientEmail ?? parcel.recipientEmail;
+      Object.assign(data, {
+        originTransitPointId: origin.id,
+        destinationTransitPointId: destination.id,
+        currentTransitPointId: origin.id,
+        pickupAddress: origin.name,
+        deliveryAddress: destination.name,
+        currentLocation: origin.name,
+        routeId: plan.legs[0].routeId,
+        weight: newWeight,
+        deliveryMethod: method,
+        deliveryFee: this.calculateDeliveryFee(newWeight, origin.name, destination.name, undefined, value ?? parcel.value ?? undefined, this.calculateTransitPointDistance(origin, destination), parcel.category ?? undefined),
+        recipientName: recipientName ?? parcel.recipientName,
+        recipientEmail: newRecipientEmail,
+        recipientPhone: recipientPhone ?? parcel.recipientPhone,
+        recipientId: recipientEmail !== undefined ? (await this.customerIdByEmail(newRecipientEmail)) ?? null : parcel.recipientId,
+      });
     }
 
-    // Validate status transition
-    if (!this.isValidStatusTransition(parcel.status, status)) {
-      throw new BadRequestException(
-        `Invalid status transition from ${parcel.status} to ${status}`,
-      );
-    }
-
-    // Prepare update data
-    const confirmedLocation = status === 'collected'
-      ? (currentLocation || parcel.pickupAddress)
-      : currentLocation;
-    const updateData: Prisma.ParcelUpdateInput = {
-      status,
-      currentLocation: confirmedLocation,
-      latitude,
-      longitude,
-    };
-
-    // Set timestamps based on status
-    if (status === 'collected' && !parcel.actualPickupTime) {
-      updateData.actualPickupTime = new Date();
-    } else if (
-      status === 'delivered_to_recipient' &&
-      !parcel.actualDeliveryTime
-    ) {
-      updateData.actualDeliveryTime = new Date();
-      updateData.deliveredToRecipient = true;
-    }
-
-    // Parcel, history, and audit must succeed or fail together.
     const updatedParcel = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.parcel.update({
-        where: { id },
-        data: updateData,
-        include: {
-          sender: true,
-          recipient: true,
-          driver: true,
-          statusHistory: { orderBy: { timestamp: 'desc' } },
-        },
-      });
-
-      await tx.parcelStatusHistory.create({
-        data: {
-          parcelId: id,
-          status,
-          location: confirmedLocation,
-          latitude,
-          longitude,
-          updatedBy: driverId,
-          notes,
-        },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          userId: driverId,
-          action: 'PARCEL_STATUS_UPDATED',
-          entityType: 'Parcel',
-          entityId: id,
-          before: { status: parcel.status } as Prisma.InputJsonValue,
-          after: {
-            status,
-            currentLocation: confirmedLocation ?? null,
-            notes: notes ?? null,
-          } as Prisma.InputJsonValue,
-        },
-      });
-
-      return updated;
+      const result = await tx.parcel.updateMany({ where: { id, ...(routeCritical ? { status: ParcelStatus.awaiting_confirmation } : {}) }, data: data as Prisma.ParcelUncheckedUpdateManyInput });
+      if (!result.count) throw new BadRequestException('The parcel was received at the station before this change was saved; the route is now locked');
+      if (routeCritical) {
+        const method = (data.deliveryMethod as string) ?? parcel.deliveryMethod;
+        if (method === SMART_LOCKER && !(await tx.lockerRequest.findFirst({ where: { parcelId: id, status: 'PENDING' } }))) {
+          await tx.lockerRequest.create({ data: { parcelId: id, requestedBy: userId!, size: lockerSizeFor((data.weight as number) ?? parcel.weight) } });
+        }
+        if (method === STATION_COLLECTION) await tx.lockerRequest.updateMany({ where: { parcelId: id, status: 'PENDING' }, data: { status: 'REJECTED', reviewedAt: new Date() } });
+        await tx.parcelStatusHistory.create({ data: { parcelId: id, status: parcel.status, updatedBy: userId, location: (data.pickupAddress as string) ?? parcel.pickupAddress, notes: 'Booking details updated by the sender before hand-over.' } });
+        await tx.auditLog.create({
+          data: {
+            userId, action: 'PARCEL_BOOKING_UPDATED', entityType: 'Parcel', entityId: id,
+            before: { origin: parcel.originTransitPointId, destination: parcel.destinationTransitPointId, weight: parcel.weight, method: parcel.deliveryMethod } as Prisma.InputJsonValue,
+            after: { origin: data.originTransitPointId, destination: data.destinationTransitPointId, weight: data.weight, method: data.deliveryMethod } as Prisma.InputJsonValue,
+          },
+        });
+      }
+      return tx.parcel.findUniqueOrThrow({ where: { id }, include: { sender: true, recipient: true, driver: true, statusHistory: { orderBy: { timestamp: 'desc' } } } });
     });
 
-    // Send status update email to sender
-    try {
-      this.logger.log(`Debug - Sender data for status update: name="${updatedParcel.senderName}", profilePicture="${updatedParcel.sender?.profilePicture}"`);
-      await this.mailerService.sendParcelStatusUpdate({
-        to: updatedParcel.senderEmail,
-        name: updatedParcel.senderName,
-        profilePicture: updatedParcel.sender?.profilePicture || undefined,
-        parcelId: updatedParcel.id,
-        status,
-        trackingNumber: updatedParcel.trackingNumber,
-        estimatedDelivery: updatedParcel.estimatedDeliveryTime?.toISOString(),
-      });
-      this.logger.log(
-        `Status update email sent to sender: ${updatedParcel.senderEmail}`,
-      );
-    } catch (emailError) {
-      this.logger.warn(
-        `Failed to send status update email to sender ${updatedParcel.senderEmail}:`,
-        emailError,
-      );
+    if (routeCritical) {
+      this.journey.announceBookingChange(updatedParcel, [parcel.originTransitPointId, parcel.currentTransitPointId, parcel.destinationTransitPointId, updatedParcel.originTransitPointId, updatedParcel.destinationTransitPointId]);
     }
-
-    // Send status update email to recipient
-    try {
-      this.logger.log(`Debug - Recipient data for status update: name="${updatedParcel.recipientName}", profilePicture="${updatedParcel.recipient?.profilePicture}"`);
-      await this.mailerService.sendParcelStatusUpdate({
-        to: updatedParcel.recipientEmail,
-        name: updatedParcel.recipientName,
-        profilePicture: updatedParcel.recipient?.profilePicture || undefined,
-        parcelId: updatedParcel.id,
-        status,
-        trackingNumber: updatedParcel.trackingNumber,
-        estimatedDelivery: updatedParcel.estimatedDeliveryTime?.toISOString(),
-      });
-      this.logger.log(
-        `Status update email sent to recipient: ${updatedParcel.recipientEmail}`,
-      );
-    } catch (emailError) {
-      this.logger.warn(
-        `Failed to send status update email to recipient ${updatedParcel.recipientEmail}:`,
-        emailError,
-      );
-    }
-
-    // Create notifications for both sender and recipient
-    try {
-      // Notification for sender (if registered)
-      if (updatedParcel.senderId) {
-        await this.notificationsService.create({
-          userId: updatedParcel.senderId,
-          title: `Parcel ${status.replace('_', ' ').toUpperCase()}`,
-          message: `Your parcel with tracking number ${updatedParcel.trackingNumber} is now ${status.replace('_', ' ')}.`,
-          type: this.mapStatusToNotificationType(status),
-          actionUrl: `/parcel/${updatedParcel.id}`,
-          parcelId: updatedParcel.id,
-        });
-      }
-
-      // Notification for recipient (if registered)
-      if (updatedParcel.recipientId) {
-        await this.notificationsService.create({
-          userId: updatedParcel.recipientId,
-          title: `Parcel ${status.replace('_', ' ').toUpperCase()}`,
-          message: `Your parcel with tracking number ${updatedParcel.trackingNumber} is now ${status.replace('_', ' ')}.`,
-          type: this.mapStatusToNotificationType(status),
-          actionUrl: `/parcel/${updatedParcel.id}`,
-          parcelId: updatedParcel.id,
-        });
-      }
-    } catch (notificationError) {
-      this.logger.warn(
-        'Failed to create status update notifications:',
-        notificationError,
-      );
-    }
-
-    return this.mapToParcelResponse(updatedParcel);
+    return this.hideStaffDetail(this.mapToParcelResponse(updatedParcel));
   }
 
   // Confirm delivery (for recipients)
@@ -890,7 +726,7 @@ export class ParcelsService {
           title: 'Parcel Delivered',
           message: `Your parcel with tracking number ${updatedParcel.trackingNumber} has been delivered to the recipient.`,
           type: 'PARCEL_DELIVERED',
-          actionUrl: `/parcel/${updatedParcel.id}`,
+          actionUrl: `/user/parcel-details/${updatedParcel.id}`,
           parcelId: updatedParcel.id,
         });
       }
@@ -902,7 +738,7 @@ export class ParcelsService {
           title: 'Parcel Delivered',
           message: `Your parcel with tracking number ${updatedParcel.trackingNumber} has been delivered successfully.`,
           type: 'PARCEL_DELIVERED',
-          actionUrl: `/parcel/${updatedParcel.id}`,
+          actionUrl: `/user/parcel-details/${updatedParcel.id}`,
           parcelId: updatedParcel.id,
         });
       }
@@ -922,44 +758,10 @@ export class ParcelsService {
     userId?: string,
     userRole?: string,
   ): Promise<ParcelResponseDto> {
-    // Check if user has permission to cancel this parcel
-    const existingParcel = await this.findOne(id, userId, userRole);
-
-    // Only allow cancellation if parcel is still pending or assigned
-    if (!['pending', 'assigned'].includes(existingParcel.status)) {
-      throw new BadRequestException(
-        'Cannot cancel parcel that is already in transit or delivered',
-      );
-    }
-
-    const updatedParcel = await this.prisma.parcel.update({
-      where: { id },
-      data: {
-        status: 'cancelled',
-        driverId: null,
-        assignedAt: null,
-      },
-      include: {
-        sender: true,
-        recipient: true,
-        driver: true,
-        statusHistory: {
-          orderBy: { timestamp: 'desc' },
-        },
-      },
-    });
-
-    // Create status history entry
-    await this.prisma.parcelStatusHistory.create({
-      data: {
-        parcelId: id,
-        status: 'cancelled',
-        updatedBy: userId,
-        notes: 'Parcel cancelled',
-      },
-    });
-
-    return this.mapToParcelResponse(updatedParcel);
+    await this.findOne(id, userId, userRole);
+    await this.journey.cancelParcel(id, { id: userId!, role: userRole as UserRole }, userRole === 'CUSTOMER' ? 'Cancelled by the sender before hand-over' : 'Cancelled by staff');
+    const updatedParcel = await this.prisma.parcel.findUniqueOrThrow({ where: { id }, include: { sender: true, recipient: true, driver: true, statusHistory: { orderBy: { timestamp: 'desc' } } } });
+    return this.isStaff(userRole) ? this.mapToParcelResponse(updatedParcel) : this.hideStaffDetail(this.mapToParcelResponse(updatedParcel));
   }
 
   // Mark parcel as completed (for customers)
@@ -1064,7 +866,7 @@ export class ParcelsService {
           title: 'Parcel Completed',
           message: `Your parcel with tracking number ${updatedParcel.trackingNumber} has been marked as completed by the recipient.`,
           type: 'PARCEL_COMPLETED',
-          actionUrl: `/parcel/${updatedParcel.id}`,
+          actionUrl: `/user/parcel-details/${updatedParcel.id}`,
           parcelId: updatedParcel.id,
         });
       }
@@ -1076,7 +878,7 @@ export class ParcelsService {
           title: 'Parcel Completed',
           message: `Your parcel with tracking number ${updatedParcel.trackingNumber} has been marked as completed. You can now leave a review.`,
           type: 'PARCEL_COMPLETED',
-          actionUrl: `/parcel/${updatedParcel.id}`,
+          actionUrl: `/user/parcel-details/${updatedParcel.id}`,
           parcelId: updatedParcel.id,
         });
       }
@@ -1158,40 +960,27 @@ export class ParcelsService {
 
   async getTrackingOverview(id: string, userId: string, userRole: string) {
     const parcel = await this.findOne(id, userId, userRole);
-    const [history, membership, locker, seal, scans, alerts] = await Promise.all([
+    const [history, locker, seal, scans, alerts] = await Promise.all([
       this.prisma.parcelStatusHistory.findMany({ where: { parcelId: id }, orderBy: { timestamp: 'asc' } }),
-      this.prisma.batchParcel.findFirst({ where: { parcelId: id, removedAt: null }, orderBy: { addedAt: 'desc' } }),
       this.prisma.lockerAssignment.findFirst({ where: { parcelId: id, cancelledAt: null }, orderBy: { assignedAt: 'desc' } }),
       this.prisma.parcelSeal.findUnique({ where: { parcelId: id } }),
       this.prisma.sealScan.findMany({ where: { parcelId: id }, orderBy: { createdAt: 'asc' } }),
       this.prisma.tamperAlert.findMany({ where: { parcelId: id }, orderBy: { createdAt: 'asc' } }),
     ]);
-
-    let route: any = null;
-    let batch: any = null;
-    if (membership) {
-      batch = await this.prisma.batch.findUnique({ where: { id: membership.batchId } });
-      if (batch) {
-        const routeRecord = await this.prisma.route.findUnique({ where: { id: batch.routeId } });
-        const memberships = await this.prisma.routeTransitPoint.findMany({ where: { routeId: batch.routeId }, orderBy: { sequence: 'asc' } });
-        const points = memberships.length ? await this.prisma.transitPoint.findMany({ where: { id: { in: memberships.map((item) => item.transitPointId) } } }) : [];
-        const byId = new Map(points.map((point) => [point.id, point]));
-        route = routeRecord ? { ...routeRecord, transitPoints: memberships.map((item) => ({ sequence: item.sequence, ...byId.get(item.transitPointId) })) } : null;
-      }
-    }
     let lockerDetails: any = null;
     if (locker) {
       const compartment = await this.prisma.lockerCompartment.findUnique({ where: { id: locker.compartmentId } });
       const station = compartment ? await this.prisma.lockerStation.findUnique({ where: { id: compartment.stationId } }) : null;
       const collection = await this.prisma.collectionCode.findFirst({ where: { lockerAssignmentId: locker.id, usedAt: null }, orderBy: { createdAt: 'desc' } });
-      lockerDetails = { id: locker.id, assignedAt: locker.assignedAt, collectedAt: locker.collectedAt, compartmentNo: compartment?.compartmentNo, size: compartment?.size, stationName: station?.name, stationAddress: station?.address, expiresAt: collection?.expiresAt };
+      lockerDetails = { id: locker.id, assignedAt: locker.assignedAt, placedAt: locker.placedAt, collectedAt: locker.collectedAt, compartmentNo: compartment?.compartmentNo, size: compartment?.size, stationName: station?.name, stationAddress: station?.address, expiresAt: collection?.expiresAt };
     }
+    const staff = userRole === 'ADMIN' || userRole === 'TRANSIT_OFFICER';
 
     return {
-      parcel,
-      timeline: history,
-      batch: batch ? { id: batch.id, batchNumber: batch.batchNumber, status: batch.status } : null,
-      route,
+      parcel: staff ? parcel : this.hideStaffDetail(parcel),
+      // Operational notes name drivers and trips, so customers get the status, place and time only.
+      timeline: staff ? history : history.map((entry) => ({ status: entry.status, location: entry.location, timestamp: entry.timestamp })),
+      journey: staff ? await this.journey.journeyView(id, 'staff') : null,
       locker: lockerDetails,
       security: {
         seal: seal ? { identifier: seal.identifier, active: seal.active, createdAt: seal.createdAt } : null,
@@ -1230,15 +1019,13 @@ export class ParcelsService {
     if (type === 'sent') {
       where.OR = [
         { senderId: userId },
-        { senderName: user.name },
-        { senderEmail: user.email }
+        { senderId: null, senderEmail: { equals: user.email, mode: 'insensitive' } },
       ];
       console.log(`📋 Sent query - checking senderId: ${userId}, senderName: ${user.name}, senderEmail: ${user.email}`);
     } else {
       where.OR = [
         { recipientId: userId },
-        { recipientName: user.name },
-        { recipientEmail: user.email }
+        { recipientId: null, recipientEmail: { equals: user.email, mode: 'insensitive' } },
       ];
       console.log(`📋 Received query - checking recipientId: ${userId}, recipientName: ${user.name}, recipientEmail: ${user.email}`);
     }
@@ -1284,7 +1071,7 @@ export class ParcelsService {
       console.log(`    senderId: ${p.senderId}, recipientId: ${p.recipientId}`);
     });
 
-    const result = parcels.map((parcel) => this.mapToParcelResponse(parcel));
+    const result = parcels.map((parcel) => this.hideStaffDetail(this.mapToParcelResponse(parcel)));
     console.log(`✅ Returning ${result.length} parcels for ${type} query`);
 
     return result;
@@ -1296,8 +1083,8 @@ export class ParcelsService {
     status?: string,
   ): Promise<ParcelResponseDto[]> {
     const where: Prisma.ParcelWhereInput = {
-      driverId,
       deletedAt: null,
+      ...this.driverParcelScope(driverId),
     };
 
     if (status) {
@@ -1324,7 +1111,11 @@ export class ParcelsService {
     return parcels.map((parcel) => this.mapToParcelResponse(parcel));
   }
 
-  // Link anonymous parcels to user (enhanced version)
+  /**
+   * Links earlier parcels to a newly registered customer by email: parcels they sent (including walk-in
+   * bookings recorded by staff before the ownership fix, which stored the staff member as sender) and
+   * parcels addressed to them.
+   */
   async linkAnonymousParcelsToUser(
     userId: string,
     userEmail: string,
@@ -1333,49 +1124,30 @@ export class ParcelsService {
     message: string;
   }> {
     try {
-      // Find all parcels where senderId is null and senderEmail matches the new user's email
-      const anonymousParcels = await this.prisma.parcel.findMany({
+      const email = { equals: userEmail.trim(), mode: 'insensitive' as const };
+      const staffRoles: Array<'ADMIN' | 'TRANSIT_OFFICER'> = ['ADMIN', 'TRANSIT_OFFICER'];
+      const sent = await this.prisma.parcel.findMany({
         where: {
-          senderId: null,
-          senderEmail: userEmail,
+          senderEmail: email,
+          OR: [{ senderId: null }, { sender: { role: { in: staffRoles }, NOT: { email } } }],
         },
+        select: { id: true },
       });
-
-      if (anonymousParcels.length === 0) {
-        return {
-          linkedParcels: 0,
-          message: 'No anonymous parcels found for this email address.',
-        };
+      const received = await this.prisma.parcel.findMany({ where: { recipientId: null, recipientEmail: email }, select: { id: true } });
+      if (!sent.length && !received.length) {
+        return { linkedParcels: 0, message: 'No earlier parcels found for this email address.' };
       }
-
-      // Update all matching parcels to link them to the new user
-      const updateResult = await this.prisma.parcel.updateMany({
-        where: {
-          senderId: null,
-          senderEmail: userEmail,
-        },
-        data: {
-          senderId: userId,
-        },
-      });
-
-      // Update user's total parcels sent count
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          totalParcelsEverSent: {
-            increment: anonymousParcels.length,
-          },
-        },
-      });
-
-      this.logger.log(
-        `Linked ${updateResult.count} anonymous parcels to user ${userId} (${userEmail})`,
-      );
-
+      await this.prisma.$transaction([
+        this.prisma.parcel.updateMany({ where: { id: { in: sent.map((item) => item.id) } }, data: { senderId: userId } }),
+        this.prisma.parcel.updateMany({ where: { id: { in: received.map((item) => item.id) } }, data: { recipientId: userId } }),
+        this.prisma.lockerRequest.updateMany({ where: { parcelId: { in: received.map((item) => item.id) }, status: 'PENDING' }, data: { requestedBy: userId } }),
+        this.prisma.user.update({ where: { id: userId }, data: { totalParcelsEverSent: { increment: sent.length }, totalParcelsReceived: { increment: received.length } } }),
+      ]);
+      const linked = new Set([...sent, ...received].map((item) => item.id)).size;
+      this.logger.log(`Linked ${sent.length} sent and ${received.length} received parcels to user ${userId}`);
       return {
-        linkedParcels: updateResult.count,
-        message: `Successfully linked ${updateResult.count} previous parcels to your account.`,
+        linkedParcels: linked,
+        message: `Successfully linked ${linked} previous parcels to your account.`,
       };
     } catch (error) {
       this.logger.error(
@@ -1581,7 +1353,7 @@ export class ParcelsService {
         },
       });
 
-      return parcels.map((parcel) => this.mapToParcelResponse(parcel));
+      return parcels.map((parcel) => this.hideStaffDetail(this.mapToParcelResponse(parcel)));
     } catch (error) {
       this.logger.error(
         `Failed to get anonymous parcels for email ${email}:`,
@@ -1854,15 +1626,8 @@ export class ParcelsService {
     return trackingNumber;
   }
 
-  private isValidStatusTransition(
-    currentStatus: string,
-    newStatus: string,
-  ): boolean {
-    return canTransitionParcel(currentStatus as ParcelStatus, newStatus as ParcelStatus);
-  }
-
   // Helper method to map parcel status to notification type
-  private mapStatusToNotificationType(status: string): 
+  private mapStatusToNotificationType(status: string):
     | 'PARCEL_CREATED'
     | 'PARCEL_ASSIGNED'
     | 'PARCEL_PICKED_UP'
@@ -1879,8 +1644,20 @@ export class ParcelsService {
       'delivered': 'PARCEL_DELIVERED',
       'completed': 'PARCEL_COMPLETED',
     };
-    
+
     return statusMap[status] || 'PARCEL_CREATED';
+  }
+
+  /**
+   * Customers and the public never see who is carrying their parcel: the driver is staff information.
+   * Station names, status and timings stay visible.
+   */
+  private hideStaffDetail<T extends ParcelResponseDto>(parcel: T): T {
+    return { ...parcel, driver: undefined, driverId: undefined, assignedAt: undefined };
+  }
+
+  private isStaff(userRole?: string): boolean {
+    return userRole === 'ADMIN' || userRole === 'TRANSIT_OFFICER' || userRole === 'DRIVER';
   }
 
   private mapToParcelResponse(
@@ -1907,6 +1684,14 @@ export class ParcelsService {
       driverId: parcel.driverId || undefined,
       assignedAt: parcel.assignedAt || undefined,
       routeId: parcel.routeId || undefined,
+      originTransitPointId: parcel.originTransitPointId || undefined,
+      destinationTransitPointId: parcel.destinationTransitPointId || undefined,
+      currentTransitPointId: parcel.currentTransitPointId || undefined,
+      custody: parcel.custody,
+      deliveryMethod: parcel.deliveryMethod,
+      originConfirmedAt: parcel.originConfirmedAt || undefined,
+      readyForCollectionAt: parcel.readyForCollectionAt || undefined,
+      collectionDeadlineAt: parcel.collectionDeadlineAt || undefined,
       pickupAddress: parcel.pickupAddress,
       deliveryAddress: parcel.deliveryAddress,
       currentLocation: parcel.currentLocation || undefined,
@@ -1981,7 +1766,9 @@ export class ParcelsService {
   }
 
   /**
-   * Calculate delivery fee based on weight and estimated distance
+   * Parcels below 5 kg with a declared value below KSH 5,000 cost KSH 300.
+   * All other parcels cost KSH 300 plus their weight at KSH 20/kg, increasing
+   * by KSH 5/kg for every completed 100 km of the trip.
    * @param weight - Parcel weight in kg
    * @param pickupAddress - Pickup address
    * @param deliveryAddress - Delivery address
@@ -1991,33 +1778,45 @@ export class ParcelsService {
     weight: number,
     pickupAddress: string,
     deliveryAddress: string,
+    _pricePerKg?: number,
+    declaredValue: number = 0,
+    distanceKm: number = 0,
+    category?: string,
   ): number {
-    const baseFee = 500; // Base delivery fee in KES
-    const weightFee = weight * 100; // 100 KES per kg
-    const distanceFee = this.estimateDistanceFee(pickupAddress, deliveryAddress);
-    
-    return baseFee + weightFee + distanceFee;
+    const parcelWeight = Math.max(0, Number(weight) || 0);
+    const parcelValue = Math.max(0, Number(declaredValue) || 0);
+
+    const premiumCategory = ['FRAGILE', 'ELECTRONICS'].includes((category ?? '').trim().toUpperCase());
+    if (premiumCategory) {
+      return Math.max(500, Math.round(DELIVERY_FEE_CONFIG.MINIMUM_FEE + parcelWeight * (DELIVERY_FEE_CONFIG.BASE_PER_KG_FEE + Math.floor(Math.max(0, Number(distanceKm) || 0) / DELIVERY_FEE_CONFIG.DISTANCE_BAND_KM) * DELIVERY_FEE_CONFIG.DISTANCE_BAND_PER_KG_INCREASE)));
+    }
+
+    if (
+      parcelWeight < DELIVERY_FEE_CONFIG.LIGHT_WEIGHT_LIMIT_KG &&
+      parcelValue < DELIVERY_FEE_CONFIG.LOW_DECLARED_VALUE_LIMIT
+    ) {
+      return DELIVERY_FEE_CONFIG.MINIMUM_FEE;
+    }
+
+    const distanceBands = Math.floor(Math.max(0, Number(distanceKm) || 0) / DELIVERY_FEE_CONFIG.DISTANCE_BAND_KM);
+    const perKgFee = DELIVERY_FEE_CONFIG.BASE_PER_KG_FEE
+      + distanceBands * DELIVERY_FEE_CONFIG.DISTANCE_BAND_PER_KG_INCREASE;
+    return Math.round(DELIVERY_FEE_CONFIG.MINIMUM_FEE + parcelWeight * perKgFee);
   }
 
-  /**
-   * Estimate distance fee based on address complexity
-   * This is a simplified version - in a real app, you'd use geocoding APIs
-   */
-  private estimateDistanceFee(
-    pickupAddress: string,
-    deliveryAddress: string,
+  private calculateTransitPointDistance(
+    pickup: { latitude: number | null; longitude: number | null } | null,
+    destination: { latitude: number | null; longitude: number | null } | null,
   ): number {
-    // Simple estimation based on address length and complexity
-    const pickupComplexity = pickupAddress.length / 10;
-    const deliveryComplexity = deliveryAddress.length / 10;
-
-    // Base distance fee
-    let distanceFee = DELIVERY_FEE_CONFIG.MIN_DISTANCE_FEE;
-
-    // Add complexity-based fee
-    distanceFee += (pickupComplexity + deliveryComplexity) * 25;
-
-    // Cap the distance fee at maximum
-    return Math.min(distanceFee, DELIVERY_FEE_CONFIG.MAX_DISTANCE_FEE);
+    if (pickup?.latitude == null || pickup?.longitude == null || destination?.latitude == null || destination?.longitude == null) {
+      return 0;
+    }
+    const toRadians = (degrees: number) => degrees * Math.PI / 180;
+    const latitudeDifference = toRadians(destination.latitude - pickup.latitude);
+    const longitudeDifference = toRadians(destination.longitude - pickup.longitude);
+    const a = Math.sin(latitudeDifference / 2) ** 2
+      + Math.cos(toRadians(pickup.latitude)) * Math.cos(toRadians(destination.latitude))
+      * Math.sin(longitudeDifference / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 }

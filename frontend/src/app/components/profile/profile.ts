@@ -51,15 +51,6 @@ function passwordStrengthValidator(control: AbstractControl): ValidationErrors |
   return null;
 }
 
-interface DriverApplication {
-  licenseNumber: string;
-  vehicleNumber?: string;
-  vehicleType?: 'MOTORCYCLE' | 'CAR' | 'VAN' | 'TRUCK';
-  reason?: string;
-  applicationDate?: Date;
-  approvalDate?: Date;
-}
-
 @Component({
   selector: 'app-profile',
   standalone: true,
@@ -71,12 +62,10 @@ export class Profile implements OnInit, AfterViewInit {
   @ViewChild('profilePictureSection', { static: false }) profilePictureSection!: ElementRef;
   @ViewChild('personalInfoSection', { static: false }) personalInfoSection!: ElementRef;
   @ViewChild('passwordSection', { static: false }) passwordSection!: ElementRef;
-  @ViewChild('driverApplicationSection', { static: false }) driverApplicationSection!: ElementRef;
   @ViewChild('accountManagementSection', { static: false }) accountManagementSection!: ElementRef;
 
   profileForm: FormGroup;
   passwordForm: FormGroup;
-  driverApplicationForm: FormGroup;
   userProfile: User | null = null;
   selectedImage: File | null = null;
   imagePreview: string | null = null;
@@ -85,10 +74,6 @@ export class Profile implements OnInit, AfterViewInit {
   isLoading = false;
   initialProfileData: any;
   initialPasswordData: any;
-  driverApplicationStatus?: 'NOT_APPLIED' | 'PENDING' | 'APPROVED' | 'REJECTED';
-  driverRejectionReason?: string;
-  driverApplication?: DriverApplication;
-  showReapplyForm = false; // Add this property for reapply form visibility
   savedRoutes: any[] = [];
   selectedDriverRoutes: string[] = [];
 
@@ -121,13 +106,6 @@ export class Profile implements OnInit, AfterViewInit {
       newPassword: ['', [Validators.required, Validators.minLength(8), passwordStrengthValidator]],
       confirmPassword: ['', [Validators.required]]
     }, { validators: this.passwordMatchValidator });
-
-    this.driverApplicationForm = this.fb.group({
-      licenseNumber: ['', [Validators.required, Validators.minLength(5)]],
-      vehicleNumber: [''],
-      vehicleType: ['', [Validators.required]],
-      reason: ['', [Validators.required, Validators.minLength(5)]]
-    });
 
     // Store initial form values
     this.initialProfileData = this.profileForm.value;
@@ -208,31 +186,8 @@ export class Profile implements OnInit, AfterViewInit {
       address: user.address || ''
     });
     
-    // Load driver application data
-    this.driverApplicationStatus = user.driverApplicationStatus || 'NOT_APPLIED';
-    this.driverRejectionReason = user.driverRejectionReason;
     this.selectedDriverRoutes = Array.isArray(user.routesServed) ? [...user.routesServed] : [];
-    
-    // Only create driver application object if user has actually applied
-    if (user.driverApplicationStatus && user.driverApplicationStatus !== 'NOT_APPLIED') {
-      this.driverApplication = {
-        licenseNumber: user.licenseNumber || '',
-        vehicleNumber: user.vehicleNumber,
-        vehicleType: user.vehicleType,
-        reason: 'I want to help deliver packages and earn extra income while providing excellent service to customers.',
-        applicationDate: user.driverApplicationDate || new Date(),
-        approvalDate: user.driverApprovalDate
-      };
-    } else {
-      // Reset driver application object for users who haven't applied
-      this.driverApplication = undefined;
-    }
-    
-    // Reset driver application form for customers who haven't applied or were rejected
-    if (user.role === 'CUSTOMER' && (!this.driverApplicationStatus || this.driverApplicationStatus === 'NOT_APPLIED' || this.driverApplicationStatus === 'REJECTED')) {
-      this.driverApplicationForm.reset();
-    }
-    
+
     // Update initial form data
     this.initialProfileData = this.profileForm.value;
   }
@@ -673,7 +628,7 @@ export class Profile implements OnInit, AfterViewInit {
     });
   }
 
-  // Driver Application Methods
+  // Driver route preferences
   toggleDriverRoute(routeId: string): void {
     if (!routeId) return;
 
@@ -722,123 +677,6 @@ export class Profile implements OnInit, AfterViewInit {
         this.toastService.showError(msg);
       }
     });
-  }
-
-  submitDriverApplication() {
-    if (this.driverApplicationForm.valid && !this.isLoading) {
-      this.isLoading = true;
-      
-      const formData = this.driverApplicationForm.value;
-      const applicationData = {
-        licenseNumber: formData.licenseNumber,
-        vehicleNumber: formData.vehicleNumber || '',
-        vehicleType: formData.vehicleType || '',
-        reason: formData.reason || ''
-      };
-
-      const headers = this.authService.getAuthHeaders();
-      
-      // Store the previous status to determine if this is a reapplication
-      const wasRejected = this.driverApplicationStatus === 'REJECTED';
-      
-      this.http.post(
-        `${environment.apiUrl}/drivers/apply`,
-        applicationData,
-        { headers }
-      ).subscribe({
-        next: (response) => {
-          // Backend returns the data directly, not wrapped in success object
-          const applicationDate = new Date();
-          
-          // Update local user profile with application data
-          if (this.userProfile) {
-            this.userProfile.driverApplicationStatus = 'PENDING';
-            this.userProfile.driverApplicationDate = applicationDate;
-            this.userProfile.licenseNumber = formData.licenseNumber;
-            this.userProfile.vehicleNumber = formData.vehicleNumber;
-            this.userProfile.vehicleType = formData.vehicleType;
-            // Clear rejection reason when reapplying
-            this.userProfile.driverRejectionReason = undefined;
-          }
-          
-          this.driverApplicationStatus = 'PENDING';
-          this.driverRejectionReason = undefined;
-          this.driverApplication = {
-            ...formData,
-            applicationDate: applicationDate
-          };
-          
-          // Hide reapply form after successful submission
-          this.showReapplyForm = false;
-          
-          this.isLoading = false;
-          this.toastService.showSuccess(
-            wasRejected 
-              ? 'Driver application resubmitted successfully!' 
-              : 'Driver application submitted successfully!'
-          );
-          
-          // Reset form
-          this.driverApplicationForm.reset();
-        },
-        error: (error) => {
-          console.error('Error submitting driver application:', error);
-          this.isLoading = false;
-          
-          if (error.status === 401) {
-            this.toastService.showError('Authentication expired. Please login again.');
-            this.router.navigate(['/login']);
-          } else if (error.status === 400) {
-            const errorMessage = error.error?.message || 'Invalid application data';
-            this.toastService.showError(errorMessage);
-          } else {
-            this.toastService.showError('Failed to submit driver application. Please try again.');
-          }
-        }
-      });
-    } else {
-      this.markFormGroupTouched(this.driverApplicationForm);
-      this.toastService.showError('Please fill in all required fields correctly');
-    }
-  }
-
-  getStatusClass(status: string): string {
-    switch (status) {
-      case 'PENDING':
-        return 'status-pending';
-      case 'APPROVED':
-        return 'status-approved';
-      case 'REJECTED':
-        return 'status-rejected';
-      default:
-        return '';
-    }
-  }
-
-  getStatusIcon(status: string): string {
-    switch (status) {
-      case 'PENDING':
-        return 'fas fa-clock';
-      case 'APPROVED':
-        return 'fas fa-check-circle';
-      case 'REJECTED':
-        return 'fas fa-times-circle';
-      default:
-        return 'fas fa-info-circle';
-    }
-  }
-
-  getStatusText(status: string): string {
-    switch (status) {
-      case 'PENDING':
-        return 'Under Review';
-      case 'APPROVED':
-        return 'Approved';
-      case 'REJECTED':
-        return 'Rejected';
-      default:
-        return 'Unknown';
-    }
   }
 
   getVehicleTypeDisplay(vehicleType?: string): string {

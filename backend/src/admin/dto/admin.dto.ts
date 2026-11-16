@@ -3,12 +3,18 @@ import { ParcelStatus } from '@prisma/client';
 import {
   IsOptional,
   IsString,
+  IsEmail,
   IsNumber,
+  Min,
   IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsIn,
+  IsArray,
+  ArrayMaxSize,
+  ArrayUnique,
   MaxLength,
+  MinLength,
   ValidateIf,
 } from 'class-validator';
 
@@ -72,6 +78,85 @@ export class DriverManagementDto {
   reason?: string;
 }
 
+export class UpgradeCustomerToDriverDto {
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MinLength(5)
+  @MaxLength(20)
+  licenseNumber: string;
+
+  @IsIn(['MOTORCYCLE', 'CAR', 'VAN', 'TRUCK'])
+  vehicleType: 'MOTORCYCLE' | 'CAR' | 'VAN' | 'TRUCK';
+
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(30)
+  vehicleNumber?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  maxLoadKg?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  maxDistanceKm?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ArrayUnique()
+  @IsString({ each: true })
+  routesServed?: string[];
+}
+
+export class CreateDriverAccountDto extends UpgradeCustomerToDriverDto {
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  name: string;
+
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toLowerCase() : value)
+  @IsEmail()
+  email: string;
+
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MinLength(10)
+  @MaxLength(20)
+  phone: string;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(100)
+  password: string;
+
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(255)
+  address?: string;
+}
+
+export class CreateTransitOfficerAccountDto {
+  @IsString() @MinLength(2) @MaxLength(100)
+  name: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toLowerCase() : value)
+  @IsEmail()
+  email: string;
+  @IsString() @MinLength(10) @MaxLength(20)
+  phone: string;
+  @IsString() @MinLength(8) @MaxLength(100)
+  password: string;
+  @IsOptional() @IsString() @MaxLength(255)
+  address?: string;
+  @IsString()
+  transitPointId: string;
+}
+
 export class UserManagementDto {
   @IsOptional()
   @IsString()
@@ -124,6 +209,10 @@ export class DriverFilterDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  routeId?: string;
 
   @IsOptional()
   @Transform(({ value }) => {
@@ -208,8 +297,13 @@ export class UserFilterDto {
   search?: string;
 
   @IsOptional()
-  @IsEnum(['CUSTOMER', 'DRIVER', 'ADMIN'])
-  role?: 'CUSTOMER' | 'DRIVER' | 'ADMIN';
+  @IsEnum(['CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN'])
+  role?: 'CUSTOMER' | 'DRIVER' | 'TRANSIT_OFFICER' | 'ADMIN';
+
+  /** Drivers serving this route, and the officers of the stations it stops at. */
+  @IsOptional()
+  @IsString()
+  routeId?: string;
 
   @IsOptional()
   @Transform(({ value }) => {

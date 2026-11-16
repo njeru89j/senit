@@ -28,10 +28,18 @@ async function bootstrap() {
     ]);
     const isLocalDevelopmentOrigin = (origin: string) =>
       /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(origin);
+    const isTemporaryDevelopmentTunnelOrigin = (origin: string) =>
+      process.env.NODE_ENV !== 'production' &&
+      /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(origin);
 
     app.enableCors({
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.has(origin) || isLocalDevelopmentOrigin(origin)) {
+        if (
+          !origin ||
+          allowedOrigins.has(origin) ||
+          isLocalDevelopmentOrigin(origin) ||
+          isTemporaryDevelopmentTunnelOrigin(origin)
+        ) {
           callback(null, true);
           return;
         }
@@ -55,9 +63,14 @@ async function bootstrap() {
     app.setGlobalPrefix('api');
 
     // Serve the SPA while leaving API and Socket.IO requests to Nest.
-    const frontendPath = join(process.cwd(), 'public');
-    const frontendIndex = join(frontendPath, 'index.html');
-    if (existsSync(frontendIndex)) {
+    // Support both local development and process managers that launch the
+    // compiled app from a directory other than `backend`.
+    const frontendPath = [
+      join(process.cwd(), 'public'),
+      join(__dirname, '..', '..', 'public'),
+    ].find((path) => existsSync(join(path, 'index.html')));
+    if (frontendPath) {
+      const frontendIndex = join(frontendPath, 'index.html');
       app.useStaticAssets(frontendPath);
       app.use((request: Request, response: Response, next: NextFunction) => {
         if (

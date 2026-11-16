@@ -1,3 +1,4 @@
+import { parcelStatusClass, parcelStatusLabel, inStatusGroup, PARCEL_STATUS_FILTERS } from '../../../utils/parcel-status';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router } from '@angular/router';
@@ -33,17 +34,7 @@ export class UserParcels implements OnInit {
   loading = false;
 
   // Filter options - based on actual ParcelStatus enum values
-  statusOptions = [
-    { value: '', label: 'All Status' },
-    { value: 'pending', label: 'Pending' },
-    { value: 'assigned', label: 'Assigned' },
-    { value: 'picked_up', label: 'Picked Up' },
-    { value: 'in_transit', label: 'In Transit' },
-    { value: 'delivered_to_recipient', label: 'Delivered to Recipient' },
-    { value: 'delivered', label: 'Delivered' },
-    { value: 'completed', label: 'Completed' },
-    { value: 'cancelled', label: 'Cancelled' }
-  ];
+  statusOptions = [{ value: '', label: 'All Status' }, ...PARCEL_STATUS_FILTERS];
 
   constructor(
     private router: Router,
@@ -203,31 +194,11 @@ export class UserParcels implements OnInit {
   }
 
   getStatusClass(status: string): string {
-    switch (status) {
-      case 'pending': return 'status-pending';
-      case 'assigned': return 'status-assigned';
-      case 'picked_up': return 'status-transit';
-      case 'in_transit': return 'status-transit';
-      case 'delivered_to_recipient': return 'status-delivered';
-      case 'delivered': return 'status-delivered';
-      case 'completed': return 'status-completed';
-      case 'cancelled': return 'status-cancelled';
-      default: return '';
-    }
+    return parcelStatusClass(status);
   }
 
   getStatusDisplayName(status: string): string {
-    switch (status) {
-      case 'pending': return 'Pending';
-      case 'assigned': return 'Assigned';
-      case 'picked_up': return 'Picked Up';
-      case 'in_transit': return 'In Transit';
-      case 'delivered_to_recipient': return 'Delivered to Recipient';
-      case 'delivered': return 'Delivered';
-      case 'completed': return 'Completed';
-      case 'cancelled': return 'Cancelled';
-      default: return status;
-    }
+    return parcelStatusLabel(status);
   }
 
 

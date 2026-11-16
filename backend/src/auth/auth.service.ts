@@ -16,6 +16,7 @@ import { ApiResponse } from '../common/api-response/api-response.util';
 import {
   InvalidCredentialsException,
   UserAlreadyExistsException,
+  PhoneAlreadyExistsException,
   UserNotFoundException,
   TokenExpiredException,
   UserInactiveException,
@@ -56,6 +57,14 @@ export class AuthService {
 
       if (existingUser) {
         throw new UserAlreadyExistsException(createUserDto.email);
+      }
+
+      const existingPhone = await this.prisma.user.findFirst({
+        where: { phone: createUserDto.phone },
+      });
+
+      if (existingPhone) {
+        throw new PhoneAlreadyExistsException(createUserDto.phone);
       }
 
       // Hash password
@@ -118,24 +127,10 @@ export class AuthService {
       // Generate tokens
       const tokens = await this.generateTokens(user);
 
-      // Send welcome email
-      try {
-        this.logger.log(
-          `Debug - User data for email: name="${user.name}", profilePicture="${user.profilePicture}"`,
-        );
-        await this.mailerService.sendWelcomeEmail({
-          to: user.email,
-          name: user.name,
-          profilePicture: user.profilePicture || undefined,
-        });
-        this.logger.log(`Welcome email sent to: ${user.email}`);
-      } catch (emailError) {
-        this.logger.warn(
-          `Failed to send welcome email to ${user.email}:`,
-          emailError,
-        );
-        // Don't fail registration if email fails
-      }
+      // Welcome email in the background: sign-up never waits on (or fails because of) the mail server.
+      void this.mailerService
+        .sendWelcomeEmail({ to: user.email, name: user.name, profilePicture: user.profilePicture || undefined })
+        .catch((emailError) => this.logger.warn(`Failed to send welcome email to ${user.email}:`, emailError));
 
       // Prepare response
       const userResponse: UserResponseDto = this.mapToUserResponse(user, driverProfile);
@@ -154,8 +149,22 @@ export class AuthService {
     } catch (error) {
       this.logger.error('Registration failed', error);
 
-      if (error instanceof UserAlreadyExistsException) {
+      if (
+        error instanceof UserAlreadyExistsException ||
+        error instanceof PhoneAlreadyExistsException
+      ) {
         throw error;
+      }
+
+      // The database uniqueness constraint also protects against two
+      // simultaneous registrations using the same phone number.
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new PhoneAlreadyExistsException(createUserDto.phone);
       }
 
       if (error instanceof Error) {

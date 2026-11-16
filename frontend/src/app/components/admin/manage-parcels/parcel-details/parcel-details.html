@@ -37,7 +37,7 @@
             <div class="info-item">
               <label>Status:</label>
               <span class="status-badge" [ngClass]="getStatusClass(parcel.status)">
-                {{ parcel.status }}
+                {{ parcel.statusLabel || parcel.status }}
               </span>
             </div>
             <div class="info-item">
@@ -63,7 +63,41 @@
           </div>
         </div>
 
-        <!-- Sender Information -->
+        
+        <!-- Journey and dispatch (server-derived; actions are validated on the server) -->
+        <div class="section journey-section" *ngIf="trackingOverview?.journey as journey">
+          <div class="section-header"><h2 class="section-title">Journey &amp; Dispatch</h2></div>
+          <app-journey-timeline [journey]="journey" [staff]="true"></app-journey-timeline>
+          <div class="staff-actions">
+            <ng-container *ngIf="currentLeg as leg">
+              <span class="leg-state">Current leg {{ leg.from }} → {{ leg.to }}: {{ legStateLabel(leg.status) }}<ng-container *ngIf="leg.noDriverReason"> ({{ leg.noDriverReason }})</ng-container></span>
+              <button class="btn-secondary" *ngIf="leg.status === 'AWAITING_DRIVER'" (click)="retryLeg(leg)" [disabled]="actionBusy">Retry automatic assignment</button>
+              <button class="btn-secondary" *ngIf="leg.status === 'AWAITING_DRIVER' || leg.status === 'DRIVER_ASSIGNED'" (click)="assignDriver()" [disabled]="actionBusy">Choose driver…</button>
+              <button class="btn-secondary" *ngIf="activeOffer(leg) as offer" (click)="cancelOffer(offer)" [disabled]="actionBusy">Cancel {{ offer.driver?.name }}'s assignment</button>
+              <button class="btn-secondary danger" *ngIf="!isTransitOfficer && carryingTrip(leg) as tripId" (click)="custodyException(tripId)" [disabled]="actionBusy">Driver cannot continue</button>
+            </ng-container>
+            <button class="btn-secondary" *ngIf="rawStatus === 'awaiting_confirmation'" (click)="confirmReceived()" [disabled]="actionBusy">Confirm received at origin</button>
+            <button class="btn-secondary" *ngIf="journey.custody === 'STATION' && !closed && !replanning" (click)="startReplan()" [disabled]="actionBusy">Re-plan journey</button>
+            <button class="btn-secondary" *ngIf="journey.custody === 'STATION' && !closed" (click)="correctWeight()" [disabled]="actionBusy">Correct weight</button>
+            <button class="btn-secondary danger" *ngIf="['SENDER', 'STATION', 'UNKNOWN'].includes(journey.custody) && !closed" (click)="cancelParcel()" [disabled]="actionBusy">Cancel parcel</button>
+          </div>
+          <form class="replan-form" *ngIf="replanning" (ngSubmit)="replan()">
+            <label *ngIf="!isTransitOfficer">Destination
+              <select name="replanDestination" [(ngModel)]="replanning.destinationTransitPointId">
+                <option *ngFor="let p of stations" [value]="p.id">{{ p.name }}{{ p.id === trackingOverview?.parcel?.destinationTransitPointId ? ' (current)' : '' }}</option>
+              </select>
+            </label>
+            <label>Reason (recorded in the audit trail)
+              <input name="replanReason" [(ngModel)]="replanning.reason" placeholder="e.g. route closed, recipient moved" />
+            </label>
+            <div class="replan-actions">
+              <button type="button" class="btn-secondary" (click)="replanning = null">Cancel</button>
+              <button type="submit" class="btn-secondary" [disabled]="actionBusy || replanning.reason.trim().length < 5">Re-plan from {{ journey.custodyLabel?.replace('At ', '') || 'this station' }}</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Smart locker -->
         <div class="section" *ngIf="trackingOverview?.locker">
           <h2 class="section-title">Smart Locker</h2>
           <div class="contact-info">
@@ -203,6 +237,7 @@
                 <div class="history-status">{{ item.status }}</div>
                 <div class="history-time">{{ item.date }}, {{ item.time }}</div>
                 <div class="history-location" *ngIf="item.location">{{ item.location }}</div>
+                <div class="history-location" *ngIf="item.note">{{ item.note }}</div>
               </div>
             </div>
           </div>

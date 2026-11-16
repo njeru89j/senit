@@ -6,6 +6,7 @@ import { ToastService } from '../../../shared/toast/toast.service';
 import { SidebarComponent } from '../../../shared/sidebar/sidebar';
 import { AdminService } from '../../../../services/admin.service';
 import { catchError, of } from 'rxjs';
+import { inStatusGroup, parcelStatusLabel } from '../../../../utils/parcel-status';
 
 interface User {
   id: string;
@@ -96,6 +97,28 @@ export class UserDetails implements OnInit {
     private toastService: ToastService,
     private adminService: AdminService
   ) {}
+
+  showUpgradeModal = false;
+  isUpgrading = false;
+  driverDetails = { licenseNumber: '', vehicleType: '', vehicleNumber: '' };
+
+  upgradeToDriver(): void {
+    if (!this.user || this.user.role !== 'CUSTOMER' || this.isUpgrading) return;
+    this.isUpgrading = true;
+    this.adminService.upgradeCustomerToDriver(this.user.id, this.driverDetails).subscribe({
+      next: (user) => {
+        this.user = user;
+        this.isUpgrading = false;
+        this.showUpgradeModal = false;
+        this.toastService.showSuccess('Customer account upgraded to driver');
+        this.loadUserStatsAndRoleData(user.id);
+      },
+      error: (error) => {
+        this.isUpgrading = false;
+        this.toastService.showError(error?.error?.message || 'Failed to upgrade customer account');
+      }
+    });
+  }
 
   ngOnInit() {
     console.log('🔄 UserDetails ngOnInit called');
@@ -494,19 +517,14 @@ export class UserDetails implements OnInit {
   }
 
   getParcelStatusClass(status: string): string {
-    switch (status?.toLowerCase()) {
-      case 'pending':
-        return 'status-pending';
-      case 'in_transit':
-      case 'in-transit':
-        return 'status-in-transit';
-      case 'delivered':
-        return 'status-delivered';
-      case 'cancelled':
-        return 'status-cancelled';
-      default:
-        return 'status-pending';
-    }
+    if (inStatusGroup(status, 'finished')) return 'status-delivered';
+    if (inStatusGroup(status, 'closed')) return 'status-cancelled';
+    if (inStatusGroup(status, 'inTransit')) return 'status-in-transit';
+    return 'status-pending';
+  }
+
+  parcelStatusLabel(status: string): string {
+    return parcelStatusLabel(status);
   }
 
   getActivityStatusClass(status: string): string {

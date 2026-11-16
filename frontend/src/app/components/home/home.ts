@@ -122,7 +122,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
         return '/driver/my-parcels';
       case 'CUSTOMER':
       default:
-        return '/user/parcels';
+        return '/user/create-parcel';
     }
   }
 }

@@ -6,6 +6,7 @@ import { AuthService } from '../../../services/auth.service';
 import { ToastService } from '../../shared/toast/toast.service';
 import { MapComponent } from '../../shared/map/map.component';
 import { Subscription } from 'rxjs';
+import { parcelStatusClass, parcelStatusLabel, inStatusGroup, PARCEL_STATUS_FILTERS } from '../../../utils/parcel-status';
 
 @Component({
   selector: 'app-track-my-parcel',
@@ -107,27 +108,14 @@ export class TrackMyParcel implements OnInit, OnDestroy {
   }
 
   getParcelStatus(parcel: any): string {
-    switch (parcel.status) {
-      case 'pending': return 'Pending Assignment';
-      case 'assigned': return 'Driver Assigned';
-      case 'in_transit': return 'In Transit';
-      case 'out_for_delivery': return 'Out for Delivery';
-      case 'delivered': return 'Delivered';
-      case 'cancelled': return 'Cancelled';
-      default: return parcel.status;
-    }
+    return parcelStatusLabel(parcel.status);
   }
 
   getStatusColor(status: string): string {
-    switch (status) {
-      case 'pending': return '#ffc107';
-      case 'assigned': return '#17a2b8';
-      case 'in_transit': return '#007bff';
-      case 'out_for_delivery': return '#28a745';
-      case 'delivered': return '#28a745';
-      case 'cancelled': return '#dc3545';
-      default: return '#6c757d';
-    }
+    if (inStatusGroup(status, 'finished') || inStatusGroup(status, 'awaitingCollection')) return '#28a745';
+    if (inStatusGroup(status, 'closed')) return '#dc3545';
+    if (inStatusGroup(status, 'inTransit')) return '#007bff';
+    return '#ffc107';
   }
 
   private cleanupSubscriptions(): void {

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -12,9 +13,11 @@ import { CommonModule } from './common/common.module';
 import { DatabaseModule } from './database/database.module';
 import { SendITMailerModule } from './mailer/mailer.module';
 import { OperationsModule } from './operations/operations.module';
+import { SupportChatModule } from './support-chat/support-chat.module';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     DatabaseModule,
     AuthModule,
     UsersModule,
@@ -26,6 +29,7 @@ import { OperationsModule } from './operations/operations.module';
     CommonModule,
     SendITMailerModule,
     OperationsModule,
+    SupportChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -242,3 +242,44 @@ Run e2e tests:
 ```bash
 npm run test:e2e
 ```
+
+## Parcel journey workflow
+
+Code: `src/operations/workflow/`. Each concern has its own record:
+
+| Concern | Record | States |
+|---|---|---|
+| Customer lifecycle | `Parcel.status` | awaiting_confirmation → at_origin_transit_point → collected → in_transit → arrived_at_transit_point → at_transit_point / at_destination → locker_assigned → in_locker → delivered |
+| Custody | `Parcel.custody` (+ `currentTransitPointId`) | SENDER, STATION, DRIVER, HANDOVER, LOCKER, RECIPIENT, UNKNOWN |
+| Journey | `ParcelLeg` (frozen at origin confirmation) | PLANNED → AWAITING_DRIVER ⇄ DRIVER_ASSIGNED → IN_TRANSIT → AWAITING_VERIFICATION → COMPLETED (or EXCEPTION / CANCELLED) |
+| Driver assignment | `ParcelAssignment` (3-hour acceptance, capacity reservation) | ASSIGNED → ACCEPTED → COLLECTED → DROPPED → COMPLETED; REJECTED / EXPIRED / CANCELLED |
+| Driver trip | `Trip` (table `batches`) | CREATED (preparing at an endpoint) → IN_TRANSIT → CLOSED; CANCELLED |
+| Verification | `TransitInspection` | VERIFIED, MISSING, DAMAGED, TAMPER_ALERT, UNEXPECTED |
+| Exceptions | `TamperAlert` | OPEN → UNDER_INVESTIGATION → RESOLVED |
+
+- Routes are ordered stop lists (endpoints included) and run in both directions. `common/route-planner.ts` plans journeys with Dijkstra: fewest transfers, then distance, then routes that have drivers.
+- `dispatch-rules.ts` decides which open trips can take a leg: right route and direction, pickup still ahead, enough capacity. It ranks them (at the station, within 10 km, farther away), then nearest, then most spare capacity.
+- Background jobs (`workflow-sweeps.service.ts`, `@nestjs/schedule`) keep all state in the database: acceptance expiry every minute; locker codes, the 12-hour station window, unconfirmed bookings and waiting-leg retries every 10 minutes.
+- `prisma/migrations/*_parcel_journey_backfill` adds partial unique indexes (one active assignment per leg, one open trip per driver, one active locker per parcel and per compartment). If `prisma migrate dev` ever proposes dropping them, keep them.
+
+### Scenario seed ("a day on the corridor")
+
+`prisma/scenario/` holds a 13-station, 4-route network and a scripted story played through the real services. The story covers a transfer, a mid-trip pickup, a rejection with reassignment, a locker, a missing parcel, a damaged parcel and more.
+
+```bash
+npm run db:seed          # replaces previous scenario data only; prints accounts, parcels and the locker code
+npm run db:seed:verify   # checks the resulting state and cross-record invariants
+```
+
+All scenario accounts use the password `Scenario123`, for example `driver.peter@scenario.sendit.local` and `officer.nairobi@scenario.sendit.local`.
+
+### Journey scenario tests
+
+The e2e suite replays the same story and then every failure path. It only runs against a database named `sendit_scenarios` and wipes it on each run:
+
+```bash
+DATABASE_URL="postgresql://<user>:<pass>@localhost:5432/sendit_scenarios?schema=public" npx prisma migrate reset --force --skip-seed
+npm run test:e2e
+```
+
+Always set `DATABASE_URL` on the same line as a destructive command. `.env` points at your dev database.

@@ -1306,3 +1306,5 @@
     font-size: 0.875rem;
   }
 } 
+.upgrade-driver-fields { display: grid; gap: 12px; }
+.upgrade-driver-fields input, .upgrade-driver-fields select { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; }

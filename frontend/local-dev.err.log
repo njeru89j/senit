@@ -1,0 +1,536 @@
+11:34:21 PM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:34:21 PM [vite] http proxy error: /api/admin/users?page=1&limit=8
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:34:21 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:47:42 PM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:47:42 PM [vite] http proxy error: /api/admin/dashboard/stats
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:47:42 PM [vite] http proxy error: /api/admin/dashboard/system-stats
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:47:43 PM [vite] http proxy error: /api/admin/drivers?limit=3
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:47:47 PM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:47:47 PM [vite] http proxy error: /api/admin/dashboard/stats
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:47:47 PM [vite] http proxy error: /api/admin/dashboard/system-stats
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:47:47 PM [vite] http proxy error: /api/admin/drivers?limit=3
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:49:35 PM [vite] http proxy error: /api/auth/login
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+11:49:41 PM [vite] http proxy error: /api/auth/login
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:49:49 PM [vite] http proxy error: /api/auth/login
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:49:49 PM [vite] http proxy error: /api/auth/login
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:49:54 PM [vite] http proxy error: /api/auth/login
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+11:49:57 PM [vite] http proxy error: /api/auth/login
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:14 AM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:14 AM [vite] http proxy error: /api/public/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:15 AM [vite] http proxy error: /api/parcels/suggestions/contact/sender?q=Stan%20Atei&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:45 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukiko&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:47 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikom&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:47 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomo&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:49 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorr&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:49 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorri&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:50 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorris&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:51 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorris@&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:51 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorris@g&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:52 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorris@gmail&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:53 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorris@gmail.&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:23:54 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorris@gmail.com&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:24:27 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorris@gmail.com&limit=10&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:24:28 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorris@gmail.com&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:24:31 AM [vite] http proxy error: /api/parcels/suggestions/contact/recipient?q=mukikomorris&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:28:20 AM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:28:20 AM [vite] http proxy error: /api/public/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:28:20 AM [vite] http proxy error: /api/parcels/suggestions/contact/sender?q=Stan%20Atei&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:33:37 AM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:33:37 AM [vite] http proxy error: /api/public/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:33:38 AM [vite] http proxy error: /api/parcels/suggestions/contact/sender?q=Stan%20Atei&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:33:45 AM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:33:45 AM [vite] http proxy error: /api/public/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:33:45 AM [vite] http proxy error: /api/public/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:33:45 AM [vite] http proxy error: /api/parcels/suggestions/contact/sender?q=Stan%20Atei&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:02:45 AM [vite] http proxy error: /api/parcels
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+10:02:48 AM [vite] http proxy error: /api/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:02:53 AM [vite] http proxy error: /api/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:02:55 AM [vite] http proxy error: /api/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:02:59 AM [vite] http proxy error: /api/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:03:00 AM [vite] http proxy error: /api/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:03:04 AM [vite] http proxy error: /api/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:03:18 AM [vite] http proxy error: /api/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:03:41 AM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:03:41 AM [vite] http proxy error: /api/public/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:03:41 AM [vite] http proxy error: /api/public/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+10:03:42 AM [vite] http proxy error: /api/parcels/suggestions/contact/sender?q=Stan%20Atei&limit=8&excludeRoles=DRIVER,ADMIN
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+X [ERROR] TS2339: Property 'upgradeForm' does not exist on type 'ManageUsers'. [plugin angular-compiler]
+
+    src/app/components/admin/manage-users/manage-users.html:184:95:
+      184 │ ..."btn-approve" [disabled]="upgradeForm.invalid || isUpgradingCa...
+          ╵                              ~~~~~~~~~~~
+
+  Error occurs in the template of component ManageUsers.
+
+    src/app/components/admin/manage-users/manage-users.ts:57:15:
+      57 │   templateUrl: './manage-users.html',
+         ╵                ~~~~~~~~~~~~~~~~~~~~~
+
+
+2:19:16 PM [vite] http proxy error: /api/auth/login
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:19:23 PM [vite] http proxy error: /api/auth/login
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:19:27 PM [vite] http proxy error: /api/auth/login
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:19:31 PM [vite] http proxy error: /api/auth/login
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:19:34 PM [vite] http proxy error: /api/auth/login
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+X [ERROR] TS2341: Property 'loadRoutes' is private and only accessible within class 'ManageUsers'. [plugin angular-compiler]
+
+    src/app/components/admin/manage-users/manage-users.html:180:132:
+      180 │ ...on type="button" (click)="loadRoutes()">Reload routes</button>...
+          ╵                              ~~~~~~~~~~
+
+  Error occurs in the template of component ManageUsers.
+
+    src/app/components/admin/manage-users/manage-users.ts:57:15:
+      57 │   templateUrl: './manage-users.html',
+         ╵                ~~~~~~~~~~~~~~~~~~~~~
+
+
+2:45:59 PM [vite] http proxy error: /api/admin/users?page=1&limit=8
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:45:59 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:46:41 PM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:46:41 PM [vite] http proxy error: /api/admin/users?page=1&limit=8
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:46:41 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:47:03 PM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:47:03 PM [vite] http proxy error: /api/admin/users?page=1&limit=8
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:47:03 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+2:47:03 PM [vite] http proxy error: /api/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+X [ERROR] TS2339: Property 'manageUser' does not exist on type 'AdminService'. [plugin angular-compiler]
+
+    src/app/components/admin/manage-users/manage-users.ts:243:22:
+      243 │     this.adminService.manageUser(user.id, 'suspend', reason).subs...
+          ╵                       ~~~~~~~~~~
+
+
+X [ERROR] TS7006: Parameter 'error' implicitly has an 'any' type. [plugin angular-compiler]
+
+    src/app/components/admin/manage-users/manage-users.ts:245:13:
+      245 │       error: error => this.toastService.showError(error?.error?.m...
+          ╵              ~~~~~
+
+
+X [ERROR] TS2339: Property 'manageUser' does not exist on type 'AdminService'. [plugin angular-compiler]
+
+    src/app/components/admin/manage-users/manage-users.ts:243:22:
+      243 │     this.adminService.manageUser(user.id, 'suspend', reason).subs...
+          ╵                       ~~~~~~~~~~
+
+
+X [ERROR] TS7006: Parameter 'error' implicitly has an 'any' type. [plugin angular-compiler]
+
+    src/app/components/admin/manage-users/manage-users.ts:245:13:
+      245 │       error: error => this.toastService.showError(error?.error?.m...
+          ╵              ~~~~~
+
+
+4:13:53 PM [vite] http proxy error: /api/admin/users?page=1&limit=8&role=DRIVER
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+4:13:57 PM [vite] http proxy error: /api/admin/users?page=1&limit=8
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+4:14:00 PM [vite] http proxy error: /api/admin/users?page=1&limit=8&role=CUSTOMER
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+4:14:04 PM [vite] http proxy error: /api/admin/users?page=1&limit=8
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+4:14:08 PM [vite] http proxy error: /api/admin/users?page=1&limit=8
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:04:22 PM [vite] http proxy error: /api/parcels?page=1&limit=10&sortBy=createdAt&sortOrder=desc
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:07:56 PM [vite] http proxy error: /api/operations/transit-officer/workspace
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:07:56 PM [vite] http proxy error: /api/operations/transit-officer/lockers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:07:56 PM [vite] http proxy error: /api/operations/transit-officer/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:07:56 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:07:56 PM [vite] http proxy error: /api/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:07:56 PM [vite] http proxy error: /api/operations/transit-officer/drivers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:08:04 PM [vite] http proxy error: /api/notifications/summary
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:08:04 PM [vite] http proxy error: /api/operations/transit-officer/workspace
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:08:04 PM [vite] http proxy error: /api/operations/transit-officer/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:08:04 PM [vite] http proxy error: /api/operations/transit-officer/lockers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:08:04 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:08:04 PM [vite] http proxy error: /api/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:08:04 PM [vite] http proxy error: /api/operations/transit-officer/drivers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:08:11 PM [vite] http proxy error: /api/parcels?page=1&limit=10&sortBy=createdAt&sortOrder=desc
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:13:58 PM [vite] http proxy error: /api/parcels?page=1&limit=10&sortBy=createdAt&sortOrder=desc
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:34 PM [vite] http proxy error: /api/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:34 PM [vite] http proxy error: /api/public/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:37 PM [vite] http proxy error: /api/operations/transit-officer/workspace
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:37 PM [vite] http proxy error: /api/operations/transit-officer/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:37 PM [vite] http proxy error: /api/operations/transit-officer/lockers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:37 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:37 PM [vite] http proxy error: /api/operations/transit-officer/drivers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:37 PM [vite] http proxy error: /api/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:41 PM [vite] http proxy error: /api/operations/transit-officer/workspace
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:41 PM [vite] http proxy error: /api/operations/transit-officer/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:41 PM [vite] http proxy error: /api/operations/transit-officer/lockers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:41 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:41 PM [vite] http proxy error: /api/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:41 PM [vite] http proxy error: /api/operations/transit-officer/drivers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/transit-officer/workspace
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/transit-officer/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/transit-officer/lockers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/transit-officer/drivers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/transit-officer/workspace
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/transit-officer/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/transit-officer/lockers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:42 PM [vite] http proxy error: /api/operations/transit-officer/drivers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:43 PM [vite] http proxy error: /api/operations/transit-officer/workspace
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:43 PM [vite] http proxy error: /api/operations/transit-officer/parcels
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:43 PM [vite] http proxy error: /api/operations/transit-officer/lockers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:43 PM [vite] http proxy error: /api/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:43 PM [vite] http proxy error: /api/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+9:18:43 PM [vite] http proxy error: /api/operations/transit-officer/drivers
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+3:42:58 PM [vite] http proxy error: /api/operations/transit-points
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+3:42:58 PM [vite] http proxy error: /api/public/operations/routes
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+3:43:00 PM [vite] http proxy error: /api/parcels?page=1&limit=10&sortBy=createdAt&sortOrder=desc
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+X [ERROR] TS2339: Property 'confirmationSearch' does not exist on type 'TransitWorkspace'. [plugin angular-compiler]
+
+    src/app/components/transit-officer/workspace/workspace-dashboard.html:26:313:
+      26 │ .../i><input [(ngModel)]="confirmationSearch" placeholder="Search ...
+         ╵                           ~~~~~~~~~~~~~~~~~~
+
+  Error occurs in the template of component TransitWorkspace.
+
+    src/app/components/transit-officer/workspace/workspace.ts:8:135:
+      8 │ ...nt], templateUrl: './workspace-dashboard.html', styleUrl: './wor...
+        ╵                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+X [ERROR] TS2339: Property 'confirmationSearch' does not exist on type 'TransitWorkspace'. [plugin angular-compiler]
+
+    src/app/components/transit-officer/workspace/workspace-dashboard.html:26:313:
+      26 │ .../i><input [(ngModel)]="confirmationSearch" placeholder="Search ...
+         ╵                           ~~~~~~~~~~~~~~~~~~
+
+  Error occurs in the template of component TransitWorkspace.
+
+    src/app/components/transit-officer/workspace/workspace.ts:8:135:
+      8 │ ...nt], templateUrl: './workspace-dashboard.html', styleUrl: './wor...
+        ╵                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+X [ERROR] TS2551: Property 'filteredAwaitingConfirmationParcels' does not exist on type 'TransitWorkspace'. Did you mean 'awaitingConfirmationParcels'? [plugin angular-compiler]
+
+    src/app/components/transit-officer/workspace/workspace-dashboard.html:27:51:
+      27 │ ...For="let p of filteredAwaitingConfirmationParcels"><div><b>{{p....
+         ╵                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Error occurs in the template of component TransitWorkspace.
+
+    src/app/components/transit-officer/workspace/workspace.ts:8:135:
+      8 │ ...nt], templateUrl: './workspace-dashboard.html', styleUrl: './wor...
+        ╵                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+X [ERROR] TS2551: Property 'filteredAwaitingConfirmationParcels' does not exist on type 'TransitWorkspace'. Did you mean 'awaitingConfirmationParcels'? [plugin angular-compiler]
+
+    src/app/components/transit-officer/workspace/workspace-dashboard.html:28:31:
+      28 │ ...mpty" *ngIf="!filteredAwaitingConfirmationParcels.length">No ma...
+         ╵                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Error occurs in the template of component TransitWorkspace.
+
+    src/app/components/transit-officer/workspace/workspace.ts:8:135:
+      8 │ ...nt], templateUrl: './workspace-dashboard.html', styleUrl: './wor...
+        ╵                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+X [ERROR] TS2339: Property 'confirmationSearch' does not exist on type 'TransitWorkspace'. [plugin angular-compiler]
+
+    src/app/components/transit-officer/workspace/workspace-dashboard.html:26:313:
+      26 │ .../i><input [(ngModel)]="confirmationSearch" placeholder="Search ...
+         ╵                           ~~~~~~~~~~~~~~~~~~
+
+  Error occurs in the template of component TransitWorkspace.
+
+    src/app/components/transit-officer/workspace/workspace.ts:8:135:
+      8 │ ...nt], templateUrl: './workspace-dashboard.html', styleUrl: './wor...
+        ╵                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+X [ERROR] TS2339: Property 'confirmationSearch' does not exist on type 'TransitWorkspace'. [plugin angular-compiler]
+
+    src/app/components/transit-officer/workspace/workspace-dashboard.html:26:313:
+      26 │ .../i><input [(ngModel)]="confirmationSearch" placeholder="Search ...
+         ╵                           ~~~~~~~~~~~~~~~~~~
+
+  Error occurs in the template of component TransitWorkspace.
+
+    src/app/components/transit-officer/workspace/workspace.ts:8:135:
+      8 │ ...nt], templateUrl: './workspace-dashboard.html', styleUrl: './wor...
+        ╵                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+X [ERROR] TS2551: Property 'filteredAwaitingConfirmationParcels' does not exist on type 'TransitWorkspace'. Did you mean 'awaitingConfirmationParcels'? [plugin angular-compiler]
+
+    src/app/components/transit-officer/workspace/workspace-dashboard.html:27:51:
+      27 │ ...For="let p of filteredAwaitingConfirmationParcels"><div><b>{{p....
+         ╵                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Error occurs in the template of component TransitWorkspace.
+
+    src/app/components/transit-officer/workspace/workspace.ts:8:135:
+      8 │ ...nt], templateUrl: './workspace-dashboard.html', styleUrl: './wor...
+        ╵                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+X [ERROR] TS2551: Property 'filteredAwaitingConfirmationParcels' does not exist on type 'TransitWorkspace'. Did you mean 'awaitingConfirmationParcels'? [plugin angular-compiler]
+
+    src/app/components/transit-officer/workspace/workspace-dashboard.html:28:31:
+      28 │ ...mpty" *ngIf="!filteredAwaitingConfirmationParcels.length">No ma...
+         ╵                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Error occurs in the template of component TransitWorkspace.
+
+    src/app/components/transit-officer/workspace/workspace.ts:8:135:
+      8 │ ...nt], templateUrl: './workspace-dashboard.html', styleUrl: './wor...
+        ╵                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+

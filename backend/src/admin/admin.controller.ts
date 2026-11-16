@@ -20,6 +20,9 @@ import {
   BulkAssignParcelsDto,
   DriverManagementDto,
   UserManagementDto,
+  UpgradeCustomerToDriverDto,
+  CreateDriverAccountDto,
+  CreateTransitOfficerAccountDto,
   DriverApplicationManagementDto,
   ParcelManagementDto,
   DriverFilterDto,
@@ -229,6 +232,33 @@ export class AdminController {
     return this.adminService.getDriverComprehensiveData(id);
   }
 
+  @Patch('users/:id/upgrade-to-driver')
+  @Roles('ADMIN')
+  async upgradeCustomerToDriver(
+    @Param('id') userId: string,
+    @Body() details: UpgradeCustomerToDriverDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.adminService.upgradeCustomerToDriver(userId, details, this.currentUser(req).id);
+  }
+
+  @Post('drivers')
+  @Roles('ADMIN')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async createDriverAccount(
+    @Body() details: CreateDriverAccountDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.adminService.createDriverAccount(details, this.currentUser(req).id);
+  }
+
+  @Post('transit-officers')
+  @Roles('ADMIN')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async createTransitOfficerAccount(@Body() details: CreateTransitOfficerAccountDto, @Request() req: AuthenticatedRequest) {
+    return this.adminService.createTransitOfficerAccount(details, this.currentUser(req).id);
+  }
+
   @Patch('users/:id/manage')
   @Roles('ADMIN')
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
@@ -251,8 +281,8 @@ export class AdminController {
 
   // Driver Management
   @Get('drivers')
-  async findAllDrivers(@Query() query: DriverFilterDto) {
-    return this.adminService.findAllDrivers(query);
+  async findAllDrivers(@Query() query: DriverFilterDto, @Request() req: AuthenticatedRequest) {
+    return this.adminService.findAllDrivers(query, this.currentUser(req));
   }
 
   @Patch('drivers/:id/manage')

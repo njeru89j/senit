@@ -52,7 +52,7 @@ export class UsersController {
   }
 
   @Get('profile/me')
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   async getProfile(@Request() req: { user: { sub: string } }) {
     const user = await this.usersService.getProfile(req.user.sub);
     return {
@@ -82,7 +82,7 @@ export class UsersController {
   @Post('profile/upload-picture')
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FileInterceptor('profilePicture'))
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   async uploadProfilePicture(
     @Request() req: { user: { sub: string } },
     @UploadedFile() file: Express.Multer.File,
@@ -119,7 +119,7 @@ export class UsersController {
 
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   update(
     @Param('id') id: string,
     @Body(createJoiValidationPipe(updateUserSchema))
@@ -141,11 +141,13 @@ export class UsersController {
 
   @Patch(':id/change-password')
   @HttpCode(HttpStatus.OK)
-  @Roles('CUSTOMER', 'DRIVER', 'ADMIN')
+  @Roles('CUSTOMER', 'DRIVER', 'TRANSIT_OFFICER', 'ADMIN')
   changePassword(
     @Param('id') id: string,
     @Body() changePasswordDto: ChangePasswordDto,
+    @Request() req: { user: { sub: string } },
   ) {
+    if (req.user?.sub !== id) throw new ForbiddenException('You can only change your own password');
     return this.usersService.changePassword(id, changePasswordDto);
   }
 }

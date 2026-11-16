@@ -7,7 +7,7 @@
     "assets": [
       {
         "include": "mailer/templates/**/*",
-        "outDir": "dist"
+        "outDir": "dist/src"
       }
     ]
   }

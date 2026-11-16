@@ -1,5 +1,8 @@
 export const environment = {
   production: false,
- apiUrl: 'https://senit.onrender.com/api',
-socketUrl: 'https://senit.onrender.com',
-}; 
+  // Relative: `ng serve` proxies /api and /socket.io to the backend (proxy.conf.json), and a tunnel to
+  // the frontend carries API calls through the same origin.
+  apiUrl: '/api',
+  socketUrl: '',
+  mapboxToken: 'your_mapbox_token',
+};

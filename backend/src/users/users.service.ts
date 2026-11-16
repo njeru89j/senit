@@ -427,10 +427,9 @@ export class UsersService {
         OR: [
           { senderId: userId },
           { recipientId: userId },
-          { senderName: user.name },
-          { recipientName: user.name },
-          { senderEmail: user.email },
-          { recipientEmail: user.email }
+          // Unlinked parcels match by email only; display names are not unique.
+          { senderId: null, senderEmail: { equals: user.email, mode: 'insensitive' } },
+          { recipientId: null, recipientEmail: { equals: user.email, mode: 'insensitive' } },
         ],
         deletedAt: null,
       },

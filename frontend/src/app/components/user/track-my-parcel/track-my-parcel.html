@@ -26,7 +26,7 @@
         >
           <div class="parcel-info">
             <div class="parcel-header">
-              <h4>Parcel #{{ parcel.id }}</h4>
+              <h4>Parcel {{ parcel.trackingNumber || parcel.id }}</h4>
               <span class="parcel-status" [style.background-color]="getStatusColor(parcel.status)">
                 {{ getParcelStatus(parcel) }}
               </span>

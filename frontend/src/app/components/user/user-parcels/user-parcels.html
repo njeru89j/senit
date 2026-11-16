@@ -10,6 +10,10 @@
         <h1>My Parcels</h1>
       </div>
       <div class="header-right">
+        <a class="refresh-btn" routerLink="/user/create-parcel">
+          <i class="fas fa-plus"></i>
+          Create delivery
+        </a>
         <button 
           class="refresh-btn"
           (click)="refreshParcels()"
@@ -176,6 +180,7 @@
             <p *ngIf="statusFilter || searchQuery">
               No parcels match your current filters. Try adjusting your search criteria.
             </p>
+            <a *ngIf="activeTab === 'sent' && !statusFilter && !searchQuery" class="action-btn view-btn" routerLink="/user/create-parcel"><i class="fas fa-plus"></i> Create delivery</a>
           </div>
         </div>
       </div>

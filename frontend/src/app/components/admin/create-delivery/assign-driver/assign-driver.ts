@@ -8,6 +8,7 @@ import { MapMarkerType } from '../../../../types/map.types';
 import { SidebarComponent } from '../../../shared/sidebar/sidebar';
 import { DriversService, Driver, AssignParcelDto } from '../../../../services/drivers.service';
 import { ParcelsService } from '../../../../services/parcels.service';
+import { OperationsService } from '../../../../services/operations.service';
 import * as L from 'leaflet';
 
 interface ParcelDetails {
@@ -25,6 +26,7 @@ interface ParcelDetails {
   estimatedDeliveryTime?: number;
   senderName?: string;
   recipientName?: string;
+  routeId?: string;
 }
 
 interface DriverWithSelection extends Driver {
@@ -44,7 +46,8 @@ export class AssignDriver implements OnInit, OnDestroy {
 
   assignForm: FormGroup;
   availableDrivers: DriverWithSelection[] = [];
-  filteredDrivers: DriverWithSelection[] = [];
+    filteredDrivers: DriverWithSelection[] = [];
+  eligibilityNote = '';
   selectedDriver: DriverWithSelection | null = null;
   isLoading: boolean = false;
   isReassignment: boolean = false;
@@ -74,8 +77,9 @@ export class AssignDriver implements OnInit, OnDestroy {
     private toastService: ToastService,
     private router: Router,
     private mapService: MapService,
-    private driversService: DriversService,
-    private parcelsService: ParcelsService
+        private driversService: DriversService,
+    private parcelsService: ParcelsService,
+    private operationsService: OperationsService,
   ) {
     this.assignForm = this.fb.group({
       vehicleType: ['All'],
@@ -85,7 +89,6 @@ export class AssignDriver implements OnInit, OnDestroy {
 
   ngOnInit() {
     console.log('🚀 AssignDriver component initializing...');
-    this.loadAvailableDrivers();
     this.setupFilterListeners();
     
     // Add window resize listener for map
@@ -139,6 +142,8 @@ export class AssignDriver implements OnInit, OnDestroy {
     console.log('🎯 Final parcel details state:', this.parcelDetails);
     console.log('🎯 Final reassignment state:', this.isReassignment);
 
+    this.loadAvailableDrivers();
+
     // Initialize map after a short delay to ensure DOM is ready
     setTimeout(() => {
       console.log('🕐 Starting map initialization...');
@@ -150,7 +155,7 @@ export class AssignDriver implements OnInit, OnDestroy {
     this.isLoading = true;
     console.log('🔍 Loading available drivers...');
     
-    this.driversService.getAvailableDrivers().subscribe({
+    this.driversService.getAvailableDrivers(this.parcelDetails?.routeId, this.isTransitOfficer).subscribe({
       next: (response: any) => {
         console.log('✅ Drivers API response:', response);
         this.availableDrivers = response.drivers.map((driver: any) => ({
@@ -164,10 +169,11 @@ export class AssignDriver implements OnInit, OnDestroy {
           console.log('🔄 Reassignment mode: Excluded current driver', this.currentDriverId);
         }
         
-        this.filteredDrivers = [...this.availableDrivers];
+                this.filteredDrivers = [...this.availableDrivers];
         this.totalDrivers = this.availableDrivers.length;
         this.currentPage = 1;
         this.isLoading = false;
+        this.annotateEligibility();
         console.log('📦 Loaded drivers:', this.availableDrivers);
         console.log('📊 Total drivers found:', this.availableDrivers.length);
         
@@ -270,6 +276,44 @@ export class AssignDriver implements OnInit, OnDestroy {
     return Math.min(this.currentPage * this.itemsPerPage, this.totalDrivers);
   }
 
+    /**
+   * Only drivers with an open trip that passes the pickup and drop-off in the right direction, with room,
+   * can take the parcel. The server evaluates this; drivers are sorted by its ranking.
+   */
+  private annotateEligibility() {
+    const parcelId = this.parcelDetails?.id;
+    if (!parcelId) return;
+    this.operationsService.journey(parcelId).subscribe({
+      next: (journey: any) => {
+        const leg = journey?.internal?.legs?.find((item: any) => item.status === 'AWAITING_DRIVER' || item.status === 'DRIVER_ASSIGNED');
+        if (!leg) { this.eligibilityNote = 'This parcel has no leg waiting for a driver right now.'; return; }
+        this.eligibilityNote = `Leg ${leg.from} → ${leg.to}: only drivers with an open trip on a compatible route can be assigned.`;
+        this.operationsService.eligibleDrivers(leg.id).subscribe({
+          next: (rows: any[]) => {
+            for (const driver of this.availableDrivers as any[]) {
+              const row = rows.find((item) => item.driverId === driver.id);
+              driver.eligibility = row ? { eligible: row.eligible || row.reason === 'DECLINED', rank: row.rank, reason: row.reason, availableKg: row.availableKg } : { eligible: false, rank: null, reason: 'NO_OPEN_TRIP' };
+            }
+            const order = (driver: any) => driver.eligibility?.rank ?? (driver.eligibility?.eligible ? 500 : 1000);
+            this.availableDrivers.sort((a: any, b: any) => order(a) - order(b));
+            this.filteredDrivers = [...this.availableDrivers];
+          },
+        });
+      },
+    });
+  }
+
+  eligibilityLabel(driver: any): string {
+    const e = driver.eligibility;
+    if (!e) return '';
+    if (e.eligible) return e.rank === 1 ? 'Best match' : `Eligible · ${Math.round(e.availableKg ?? 0)} kg free`;
+    const reasons: Record<string, string> = {
+      NO_OPEN_TRIP: 'No open trip', WRONG_ROUTE_OR_DIRECTION: 'Wrong route or direction', PICKUP_PASSED: 'Already passed the pickup',
+      INSUFFICIENT_CAPACITY: 'Not enough capacity', ROUTE_INACTIVE: 'Route inactive', MOTORCYCLE_ROUTE_TOO_LONG: 'Route too long for motorcycle',
+    };
+    return reasons[e.reason] ?? 'Not eligible';
+  }
+
   selectDriver(driver: DriverWithSelection) {
     // Deselect all drivers
     this.availableDrivers.forEach(d => d.isSelected = false);
@@ -314,7 +358,7 @@ export class AssignDriver implements OnInit, OnDestroy {
         
         // Redirect to parcel details page
         setTimeout(() => {
-          this.router.navigate(['/admin-parcel-details', this.parcelDetails?.id || ''], {
+          this.router.navigate([this.parcelDetailsRoute, this.parcelDetails?.id || ''], {
             state: { 
               assignedDriverId: this.selectedDriver?.id,
               newlyAssigned: true,
@@ -326,7 +370,7 @@ export class AssignDriver implements OnInit, OnDestroy {
       error: (error: any) => {
         this.isLoading = false; // Reset loading state
         console.error('Error assigning driver:', error);
-        this.toastService.showError('Failed to assign driver to parcel');
+        this.toastService.showError(error?.message || 'Failed to assign driver to parcel');
       }
     });
   }
@@ -361,7 +405,7 @@ export class AssignDriver implements OnInit, OnDestroy {
         
         // Redirect to parcel details page
         setTimeout(() => {
-          this.router.navigate(['/admin-parcel-details', this.parcelDetails?.id || ''], {
+          this.router.navigate([this.parcelDetailsRoute, this.parcelDetails?.id || ''], {
             state: { 
               assignedDriverId: this.selectedDriver?.id,
               newlyAssigned: true,
@@ -374,7 +418,7 @@ export class AssignDriver implements OnInit, OnDestroy {
       error: (error: any) => {
         this.isLoading = false; // Reset loading state
         console.error('Error reassigning driver:', error);
-        this.toastService.showError('Failed to reassign driver to parcel');
+        this.toastService.showError(error?.message || 'Failed to reassign driver to parcel');
       }
     });
   }
@@ -390,11 +434,23 @@ export class AssignDriver implements OnInit, OnDestroy {
   goBack() {
     if (this.isReassignment && this.parcelDetails) {
       // If this is a reassignment, go back to the parcel details page
-      this.router.navigate(['/admin-parcel-details', this.parcelDetails.id]);
+      this.router.navigate([this.parcelDetailsRoute, this.parcelDetails.id]);
     } else {
       // Otherwise, go back to manage parcels
-      this.router.navigate(['/admin-manage-parcels']);
+      this.router.navigate([this.manageParcelsRoute]);
     }
+  }
+
+  private get isTransitOfficer(): boolean {
+    return this.router.url.startsWith('/transit-officer');
+  }
+
+  private get parcelDetailsRoute(): string {
+    return this.isTransitOfficer ? '/transit-officer/parcel-details' : '/admin-parcel-details';
+  }
+
+  private get manageParcelsRoute(): string {
+    return this.isTransitOfficer ? '/transit-officer/manage-parcels' : '/admin-manage-parcels';
   }
 
   // Map Methods

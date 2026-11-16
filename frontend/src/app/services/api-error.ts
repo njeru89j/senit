@@ -22,6 +22,12 @@ export function getApiErrorMessage(error: unknown): string {
     if (payload.errors?.length) return payload.errors.join('. ');
     if (payload.details?.length) return payload.details.join('. ');
     if (Array.isArray(payload.message)) return payload.message.join('. ');
+    if (
+      payload.message === 'Validation failed' &&
+      payload.details?.length
+    ) {
+      return payload.details.join('. ');
+    }
     if (payload.message) return payload.message;
   }
 
